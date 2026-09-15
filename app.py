@@ -1,12 +1,12 @@
 
 import os
 import re
-from datetime import datetime
+from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 import psycopg
 from psycopg.rows import dict_row
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, render_template, request
 
 app = Flask(__name__)
 
@@ -393,6 +393,180 @@ def job_monitor_email():
         "cancelled": bool(parsed.get("cancelled_at")),
         "allocated": bool((parsed.get("agent_callsign") or "").strip()),
     })
+
+
+@app.get("/board")
+def board():
+    today = datetime.now(LONDON).date()
+    start_date = date.fromisoformat(request.args["start"]) if request.args.get("start") else today
+    end_date = start_date + timedelta(days=7)
+    range_start = datetime.combine(start_date, time.min).replace(tzinfo=LONDON)
+    range_end = datetime.combine(end_date, time.min).replace(tzinfo=LONDON)
+
+    with db_connect(row_factory=dict_row) as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT o.id operation_id, o.title, o.manual_note,
+                       oa.allocation_status, oa.active_job_count, oa.unallocated_job_count,
+                       j.*
+                FROM public.monitor_operations o
+                JOIN public.v_monitor_operation_allocation oa ON oa.operation_id=o.id
+                JOIN public.monitor_jobs j ON j.operation_id=o.id
+                WHERE o.monitoring_enabled=TRUE
+                  AND j.monitoring_enabled=TRUE
+                  AND (
+                    (j.booked_at >= %s AND j.booked_at < %s)
+                    OR EXISTS (
+                      SELECT 1 FROM public.monitor_stops s
+                      WHERE s.job_ref=j.job_ref
+                        AND s.required_from >= %s AND s.required_from < %s
+                    )
+                    OR EXISTS (
+                      SELECT 1 FROM public.monitor_stops s2
+                      WHERE s2.job_ref=j.job_ref
+                        AND s2.date_completed IS NULL
+                    )
+                  )
+                ORDER BY o.id, j.job_ref
+            """, (range_start, range_end, range_start, range_end))
+            rows = [dict(r) for r in cur.fetchall()]
+
+            job_refs = sorted({r["job_ref"] for r in rows})
+            stops_by_job = {}
+            if job_refs:
+                cur.execute("""
+                    SELECT * FROM public.monitor_stops
+                    WHERE job_ref = ANY(%s)
+                    ORDER BY job_ref, drop_order
+                """, (job_refs,))
+                for s in cur.fetchall():
+                    stops_by_job.setdefault(s["job_ref"], []).append(dict(s))
+
+    ops = {}
+    for r in rows:
+        op = ops.setdefault(r["operation_id"], {
+            "operation_id": r["operation_id"],
+            "title": r["title"],
+            "manual_note": r["manual_note"],
+            "allocation_status": r["allocation_status"],
+            "active_job_count": r["active_job_count"],
+            "unallocated_job_count": r["unallocated_job_count"],
+            "jobs": [],
+        })
+        stops = stops_by_job.get(r["job_ref"], [])
+        all_completed = bool(stops) and all(s["date_completed"] for s in stops)
+        job = {
+            "job_ref": r["job_ref"],
+            "agent_callsign": r["agent_callsign"],
+            "driver_name": " ".join(p for p in [r["driver_firstname"], r["driver_lastname"]] if p),
+            "account": r["account"],
+            "vehicle": r["vehicle"],
+            "vehicle_description": r["vehicle_description"],
+            "component_role": r["component_role"],
+            "cancelled_at": r["cancelled_at"].isoformat() if r["cancelled_at"] else None,
+            "booked_at": r["booked_at"].isoformat() if r["booked_at"] else None,
+            "goods": r["goods"],
+            "special_instructions": r["special_instructions"],
+            "despatch_instructions": r["despatch_instructions"],
+            "freedom_status": r["freedom_status"],
+            "freedom_status_text": r["freedom_status_text"],
+            "active": r["cancelled_at"] is None and not all_completed,
+            "stops": [{
+                "stop_id": s["stop_id"],
+                "drop_order": s["drop_order"],
+                "postcode": s["postcode"],
+                "country": s["country"],
+                "country_code": s["country_code"],
+                "required_from": s["required_from"].isoformat() if s["required_from"] else None,
+                "date_completed": s["date_completed"].isoformat() if s["date_completed"] else None,
+            } for s in stops],
+        }
+        op["jobs"].append(job)
+
+    span_seconds = (range_end - range_start).total_seconds()
+    operations = []
+
+    for op in ops.values():
+        timed = []
+        active_any = False
+        cancelled_all = True
+
+        for j in op["jobs"]:
+            active_any = active_any or j["active"]
+            if j["cancelled_at"] is None:
+                cancelled_all = False
+            if j["stops"]:
+                for s in j["stops"]:
+                    if s["required_from"]:
+                        timed.append((datetime.fromisoformat(s["required_from"]), s, j["job_ref"]))
+            elif j["booked_at"]:
+                timed.append((datetime.fromisoformat(j["booked_at"]), None, j["job_ref"]))
+
+        earliest = min([x[0] for x in timed], default=range_start)
+        latest = max([x[0] for x in timed], default=earliest)
+
+        left_pct = max(0, min(100, ((earliest-range_start).total_seconds()/span_seconds)*100))
+        right_pct = max(left_pct, min(100, ((latest-range_start).total_seconds()/span_seconds)*100))
+        width_pct = max(4.0, right_pct-left_pct)
+
+        now = datetime.now(LONDON)
+        if op["allocation_status"] == "UNALLOCATED":
+            status, cls = "UNALLOCATED", "unallocated"
+        elif cancelled_all:
+            status, cls = "CANCELLED", "cancelled"
+        elif active_any and earliest <= now:
+            status, cls = "ACTIVE", "active"
+        elif active_any:
+            status, cls = "FUTURE", "future"
+        else:
+            status, cls = "COMPLETE", "complete"
+
+        markers = []
+        for dt, s, job_ref in timed:
+            if not s:
+                continue
+            pct = max(0, min(100, ((dt-range_start).total_seconds()/span_seconds)*100))
+            markers.append({
+                "left_pct": pct,
+                "postcode": s["postcode"] or "",
+                "country_code": s["country_code"] or "",
+                "job_ref": job_ref,
+                "drop_order": s["drop_order"],
+            })
+
+        accounts = sorted({j["account"] for j in op["jobs"] if j["account"]})
+        vehicles = [j["vehicle"] for j in op["jobs"] if j["vehicle"]]
+        op.update({
+            "status": status,
+            "status_class": cls,
+            "left_pct": left_pct,
+            "width_pct": width_pct,
+            "markers": sorted(markers, key=lambda m:(m["left_pct"],m["job_ref"],m["drop_order"])),
+            "primary_account": accounts[0] if accounts else (op["title"] or f"Operation {op['operation_id']}"),
+            "vehicles": vehicles,
+            "job_count": len(op["jobs"]),
+        })
+        operations.append(op)
+
+    operations.sort(key=lambda x:(x["left_pct"],x["operation_id"]))
+    for idx, op in enumerate(operations):
+        op["lane"] = idx % 5
+
+    days = []
+    for i in range(8):
+        d = start_date + timedelta(days=i)
+        days.append({"left_pct": i/7*100, "label": d.strftime("%a %d %b")})
+
+    return render_template(
+        "board.html",
+        operations=operations,
+        days=days,
+        start_date=start_date,
+        display_end_label=(end_date-timedelta(days=1)).strftime("%d %b %Y"),
+        prev_start=start_date-timedelta(days=7),
+        next_start=start_date+timedelta(days=7),
+    )
+
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.getenv("PORT", "8080")))

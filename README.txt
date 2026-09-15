@@ -41,3 +41,8 @@ Allocation:
   A blank Agent is treated as unallocated.
   The database view v_monitor_operation_allocation rolls that pessimistically
   up to the operation level.
+
+BOARD
+-----
+GET /board
+Default 7-day view plus active jobs. Red=unallocated, amber=active, blue=future, green=complete.

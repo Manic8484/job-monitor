@@ -177,3 +177,11 @@ V4.6 RESPONSIVE TIMELINE HEIGHT
 - The external gap before the 10-day strip is reduced to 24px.
 - No further cards can be revealed merely by increasing a fixed timeline height;
   if a card is rendered, its row necessarily contributes to the container height.
+
+V4.7 CARD OVERLAP FIX
+---------------------
+- Responsive normal-flow timeline retained.
+- Each operation row increased from 34px to 54px.
+- This gives the compact 46px cards plus shadow/border enough vertical room
+  to avoid overlap while still keeping the board dense.
+- Bottom safety zone remains unchanged.

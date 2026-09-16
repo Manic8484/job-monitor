@@ -185,3 +185,8 @@ V4.7 CARD OVERLAP FIX
 - This gives the compact 46px cards plus shadow/border enough vertical room
   to avoid overlap while still keeping the board dense.
 - Bottom safety zone remains unchanged.
+
+V4.8 ROW SPACING
+----------------
+- Timeline row height increased from 54px to 64px.
+- Leaves a clear visual gap between compact cards while retaining the responsive layout.

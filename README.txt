@@ -167,3 +167,13 @@ V4.5 CLEAR END-OF-LIST GAP
 - Adds a 48px external gap before the 10-day strip.
 - The combined effect is deliberately obvious: the last card should sit well
   above the date band so there is no suggestion that further cards are hidden.
+
+V4.6 RESPONSIVE TIMELINE HEIGHT
+-------------------------------
+- Removed the Python-calculated timeline height completely.
+- Every planned operation now owns a real 34px HTML row in normal document flow.
+- The timeline therefore grows automatically with the actual number of rendered cards.
+- A 170px internal bottom safety zone is always added after the final row.
+- The external gap before the 10-day strip is reduced to 24px.
+- No further cards can be revealed merely by increasing a fixed timeline height;
+  if a card is rendered, its row necessarily contributes to the container height.

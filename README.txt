@@ -121,3 +121,12 @@ V3.9 SELECTED-DAY / EXPANSION FIX
 - Row spacing increased slightly for wrapped account names.
 - A small 'N planned operations' count is shown beside the legend so the
   rendered-card count can be compared directly with the 10-day tile count.
+
+V4.0 TIMELINE EXPANSION / CARD WIDTH
+------------------------------------
+- Timeline height now uses the same 68px row pitch as the rendered cards.
+- The 10-day strip therefore moves down with the timeline instead of cards
+  spilling across it.
+- Planning-card account names, job/vehicle line and journey no longer wrap.
+- Timeline cards are allowed to grow horizontally to fit their content.
+- Active Monitoring cards still wrap normally inside the fixed left column.

@@ -110,3 +110,14 @@ selected-day board.
 
 Today's Active Monitoring is queried separately and contains only older,
 incomplete carry-over jobs.
+
+V3.9 SELECTED-DAY / EXPANSION FIX
+--------------------------------
+- Selected-day planning now uses the exact local calendar date of booked_at:
+  (booked_at AT TIME ZONE 'Europe/London')::date = selected_date.
+- This removes any boundary mismatch between the planning query and date tiles.
+- Timeline container no longer clips overflowing cards.
+- Each planned operation still gets its own lane.
+- Row spacing increased slightly for wrapped account names.
+- A small 'N planned operations' count is shown beside the legend so the
+  rendered-card count can be compared directly with the 10-day tile count.

@@ -535,13 +535,12 @@ def board():
                   ON o.id = j.operation_id
                 JOIN public.v_monitor_operation_allocation oa
                   ON oa.operation_id = o.id
-                WHERE j.booked_at >= %s
-                  AND j.booked_at < %s
+                WHERE (j.booked_at AT TIME ZONE 'Europe/London')::date = %s
                   AND j.monitoring_enabled = TRUE
                   AND o.monitoring_enabled = TRUE
                   AND COALESCE(o.presentation_hidden, FALSE) = FALSE
                 ORDER BY j.booked_at, j.job_ref
-            """, (day_start, day_end))
+            """, (selected_date,))
             planning_rows = [dict(r) for r in cur.fetchall()]
 
             # ACTIVE MONITORING:
@@ -808,6 +807,7 @@ def board():
         next_date=selected_date + timedelta(days=1),
         lookahead_days=lookahead_days,
         timeline_height=timeline_height,
+        planned_count=len(timeline_operations),
     )
 
 if __name__ == "__main__":

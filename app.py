@@ -395,37 +395,71 @@ def job_monitor_email():
     })
 
 
+
+@app.post("/operations/<int:operation_id>/presentation-state")
+def update_operation_presentation_state(operation_id):
+    payload = request.get_json(silent=True) or {}
+    collected = bool(payload.get("collected"))
+    complete = bool(payload.get("complete"))
+    hidden = bool(payload.get("hidden"))
+
+    with db_connect(row_factory=dict_row) as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                UPDATE public.monitor_operations
+                SET manual_collected_at = CASE WHEN %s THEN COALESCE(manual_collected_at, now()) ELSE NULL END,
+                    manual_completed_at = CASE WHEN %s THEN COALESCE(manual_completed_at, now()) ELSE NULL END,
+                    presentation_hidden = %s,
+                    manual_updated_at = now(),
+                    manual_updated_by = 'BOARD'
+                WHERE id = %s
+                RETURNING id, manual_collected_at, manual_completed_at, presentation_hidden
+            """, (collected, complete, hidden, operation_id))
+            row = cur.fetchone()
+            if not row:
+                return jsonify({"ok": False, "error": "operation not found"}), 404
+            conn.commit()
+
+    return jsonify({
+        "ok": True,
+        "operation_id": operation_id,
+        "collected": row["manual_collected_at"] is not None,
+        "complete": row["manual_completed_at"] is not None,
+        "hidden": bool(row["presentation_hidden"]),
+    })
+
+
 @app.get("/board")
 def board():
     today = datetime.now(LONDON).date()
     raw_date = request.args.get("date")
     selected_date = date.fromisoformat(raw_date) if raw_date else today
+    show_active_column = selected_date == today
 
     day_start = datetime.combine(selected_date, time.min).replace(tzinfo=LONDON)
     day_end = day_start + timedelta(days=1)
-
     lookahead_start = datetime.combine(today, time.min).replace(tzinfo=LONDON)
     lookahead_end = lookahead_start + timedelta(days=10)
 
     with db_connect(row_factory=dict_row) as conn:
         with conn.cursor() as cur:
-            # Visible operations for the selected day:
-            # anything booked/required/completed on the day, plus still-active jobs.
             cur.execute("""
                 SELECT
                     o.id AS operation_id,
                     o.title,
                     o.manual_note,
+                    o.manual_collected_at,
+                    o.manual_completed_at,
+                    o.presentation_hidden,
                     oa.allocation_status,
                     oa.active_job_count,
                     oa.unallocated_job_count,
                     j.*
                 FROM public.monitor_operations o
-                JOIN public.v_monitor_operation_allocation oa
-                  ON oa.operation_id = o.id
-                JOIN public.monitor_jobs j
-                  ON j.operation_id = o.id
+                JOIN public.v_monitor_operation_allocation oa ON oa.operation_id = o.id
+                JOIN public.monitor_jobs j ON j.operation_id = o.id
                 WHERE o.monitoring_enabled = TRUE
+                  AND COALESCE(o.presentation_hidden, FALSE) = FALSE
                   AND j.monitoring_enabled = TRUE
                   AND (
                         (j.booked_at >= %s AND j.booked_at < %s)
@@ -437,18 +471,18 @@ def board():
                                 OR (s.date_completed >= %s AND s.date_completed < %s)
                               )
                         )
-                        OR EXISTS (
-                            SELECT 1 FROM public.monitor_stops s2
-                            WHERE s2.job_ref = j.job_ref
-                              AND s2.date_completed IS NULL
+                        OR (
+                            %s
+                            AND o.manual_completed_at IS NULL
+                            AND EXISTS (
+                                SELECT 1 FROM public.monitor_stops s2
+                                WHERE s2.job_ref = j.job_ref
+                                  AND s2.date_completed IS NULL
+                            )
                         )
                       )
                 ORDER BY o.id, j.job_ref
-            """, (
-                day_start, day_end,
-                day_start, day_end,
-                day_start, day_end
-            ))
+            """, (day_start, day_end, day_start, day_end, day_start, day_end, show_active_column))
             rows = [dict(r) for r in cur.fetchall()]
 
             job_refs = sorted({r["job_ref"] for r in rows})
@@ -463,61 +497,49 @@ def board():
                 for s in cur.fetchall():
                     stops_by_job.setdefault(s["job_ref"], []).append(dict(s))
 
-            # 10-day look-ahead counts by operation, not by docket.
             cur.execute("""
-                SELECT DISTINCT
-                    o.id AS operation_id,
-                    COALESCE(
-                        MIN(s.required_from) FILTER (
-                            WHERE s.required_from >= %s AND s.required_from < %s
-                        ),
-                        MIN(j.booked_at) FILTER (
-                            WHERE j.booked_at >= %s AND j.booked_at < %s
-                        )
-                    ) AS first_dt
+                SELECT o.id AS operation_id,
+                       COALESCE(
+                         MIN(s.required_from) FILTER (WHERE s.required_from >= %s AND s.required_from < %s),
+                         MIN(j.booked_at) FILTER (WHERE j.booked_at >= %s AND j.booked_at < %s)
+                       ) AS first_dt
                 FROM public.monitor_operations o
-                JOIN public.monitor_jobs j
-                  ON j.operation_id = o.id
-                LEFT JOIN public.monitor_stops s
-                  ON s.job_ref = j.job_ref
+                JOIN public.monitor_jobs j ON j.operation_id = o.id
+                LEFT JOIN public.monitor_stops s ON s.job_ref = j.job_ref
                 WHERE o.monitoring_enabled = TRUE
+                  AND COALESCE(o.presentation_hidden, FALSE) = FALSE
+                  AND o.manual_completed_at IS NULL
                   AND j.monitoring_enabled = TRUE
                   AND j.cancelled_at IS NULL
                   AND (
-                        (s.required_from >= %s AND s.required_from < %s)
-                        OR (j.booked_at >= %s AND j.booked_at < %s)
-                      )
+                    (s.required_from >= %s AND s.required_from < %s)
+                    OR (j.booked_at >= %s AND j.booked_at < %s)
+                  )
                 GROUP BY o.id
-            """, (
-                lookahead_start, lookahead_end,
-                lookahead_start, lookahead_end,
-                lookahead_start, lookahead_end,
-                lookahead_start, lookahead_end
-            ))
+            """, (lookahead_start, lookahead_end, lookahead_start, lookahead_end,
+                  lookahead_start, lookahead_end, lookahead_start, lookahead_end))
             look_rows = [dict(r) for r in cur.fetchall()]
 
-    # Group selected-day rows into operations.
     ops = {}
     for r in rows:
         op = ops.setdefault(r["operation_id"], {
             "operation_id": r["operation_id"],
             "title": r["title"],
             "manual_note": r["manual_note"],
+            "manual_collected_at": r["manual_collected_at"],
+            "manual_completed_at": r["manual_completed_at"],
+            "presentation_hidden": bool(r["presentation_hidden"]),
             "allocation_status": r["allocation_status"],
             "active_job_count": r["active_job_count"],
             "unallocated_job_count": r["unallocated_job_count"],
             "jobs": [],
         })
-
         stops = stops_by_job.get(r["job_ref"], [])
         all_completed = bool(stops) and all(s["date_completed"] for s in stops)
-
         op["jobs"].append({
             "job_ref": r["job_ref"],
             "agent_callsign": r["agent_callsign"],
-            "driver_name": " ".join(
-                p for p in [r["driver_firstname"], r["driver_lastname"]] if p
-            ),
+            "driver_name": " ".join(p for p in [r["driver_firstname"], r["driver_lastname"]] if p),
             "account": r["account"],
             "vehicle": r["vehicle"],
             "vehicle_description": r["vehicle_description"],
@@ -541,7 +563,8 @@ def board():
             } for s in stops],
         })
 
-    operations = []
+    timeline_operations = []
+    active_operations = []
     now = datetime.now(LONDON)
 
     for op in ops.values():
@@ -553,35 +576,36 @@ def board():
             active_any = active_any or j["active"]
             if j["cancelled_at"] is None:
                 cancelled_all = False
-
             for s in j["stops"]:
                 if s["required_from"]:
-                    dt = datetime.fromisoformat(s["required_from"])
-                    timed.append((dt, s, j["job_ref"]))
-
+                    timed.append((datetime.fromisoformat(s["required_from"]), s, j["job_ref"]))
             if not j["stops"] and j["booked_at"]:
                 timed.append((datetime.fromisoformat(j["booked_at"]), None, j["job_ref"]))
 
-        # Prefer first timed point on selected day; otherwise clamp active jobs to midnight.
         timed_today = [x for x in timed if day_start <= x[0] < day_end]
         anchor = min([x[0] for x in timed_today], default=day_start)
+        manual_complete = op["manual_completed_at"] is not None
+        manual_collected = op["manual_collected_at"] is not None
 
-        left_pct = max(0, min(100, ((anchor - day_start).total_seconds() / 86400) * 100))
-        width_pct = 30 / 1440 * 100
-
-        if op["allocation_status"] == "UNALLOCATED":
+        if manual_complete:
+            status, cls = "COMPLETE", "complete"
+        elif op["allocation_status"] == "UNALLOCATED":
             status, cls = "UNALLOCATED", "unallocated"
         elif cancelled_all:
             status, cls = "CANCELLED", "cancelled"
-        elif active_any and anchor <= now:
+        elif manual_collected or (active_any and anchor <= now):
             status, cls = "ACTIVE", "active"
         elif active_any:
             status, cls = "FUTURE", "future"
         else:
             status, cls = "COMPLETE", "complete"
 
+        accounts = sorted({j["account"] for j in op["jobs"] if j["account"]})
+        vehicles = [j["vehicle"] for j in op["jobs"] if j["vehicle"]]
+
+        sorted_today = sorted(timed_today, key=lambda x: x[0])
         markers = []
-        for dt, s, job_ref in timed_today:
+        for dt, s, job_ref in sorted_today[1:]:
             if not s:
                 continue
             pct = max(0, min(100, ((dt - day_start).total_seconds() / 86400) * 100))
@@ -593,23 +617,39 @@ def board():
                 "drop_order": s["drop_order"],
             })
 
-        accounts = sorted({j["account"] for j in op["jobs"] if j["account"]})
-        vehicles = [j["vehicle"] for j in op["jobs"] if j["vehicle"]]
-
-        op.update({
+        base = {
+            **op,
             "status": status,
             "status_class": cls,
-            "left_pct": left_pct,
-            "width_pct": width_pct,
-            "markers": sorted(markers, key=lambda m: (m["left_pct"], m["job_ref"], m["drop_order"])),
             "primary_account": accounts[0] if accounts else (op["title"] or f"Operation {op['operation_id']}"),
             "vehicles": vehicles,
             "job_count": len(op["jobs"]),
-        })
-        operations.append(op)
+            "markers": markers,
+            "manual_collected": manual_collected,
+            "manual_complete": manual_complete,
+        }
 
-    operations.sort(key=lambda x: (x["left_pct"], x["operation_id"]))
-    for idx, op in enumerate(operations):
+        ongoing = (
+            show_active_column
+            and not manual_complete
+            and not cancelled_all
+            and (
+                manual_collected
+                or (active_any and (not timed_today or anchor <= now))
+            )
+        )
+
+        if ongoing:
+            active_operations.append(base)
+        elif timed_today:
+            left_pct = max(0, min(100, ((anchor - day_start).total_seconds() / 86400) * 100))
+            base["left_pct"] = left_pct
+            base["width_pct"] = 24 / 1440 * 100
+            timeline_operations.append(base)
+
+    active_operations.sort(key=lambda x: (x["status"] != "UNALLOCATED", x["operation_id"]))
+    timeline_operations.sort(key=lambda x: (x["left_pct"], x["operation_id"]))
+    for idx, op in enumerate(timeline_operations):
         op["lane"] = idx % 5
 
     ticks = [{"label": f"{h:02d}:00", "left_pct": h / 24 * 100} for h in range(0, 25, 2)]
@@ -635,7 +675,9 @@ def board():
 
     return render_template(
         "board.html",
-        operations=operations,
+        active_operations=active_operations,
+        timeline_operations=timeline_operations,
+        show_active_column=show_active_column,
         ticks=ticks,
         selected_date=selected_date,
         prev_date=selected_date - timedelta(days=1),

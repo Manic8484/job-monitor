@@ -46,3 +46,5 @@ BOARD
 -----
 GET /board
 Default 7-day view plus active jobs. Red=unallocated, amber=active, blue=future, green=complete.
+
+V3: run 002_monitor_presentation_controls.sql before deploy. Adds current-day active column, smaller cards, removes first pickup marker, and modal controls for Collected/Complete/Hide.

@@ -158,3 +158,12 @@ V4.4 STRONGER BOTTOM SAFETY ZONE
 - Adds a much larger bottom safety zone below the final card before the 10-day band.
 - The empty area is intentionally greater than the normal row separation so it is
   visually obvious that no further cards are hidden below.
+
+V4.5 CLEAR END-OF-LIST GAP
+--------------------------
+- Keeps 34px row spacing.
+- Increases the internal bottom safety area substantially.
+- Minimum timeline height raised to 720px.
+- Adds a 48px external gap before the 10-day strip.
+- The combined effect is deliberately obvious: the last card should sit well
+  above the date band so there is no suggestion that further cards are hidden.

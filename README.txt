@@ -142,3 +142,11 @@ V4.2 TIMELINE BOTTOM CLEARANCE
 - Keeps the 34px dense row spacing from V4.1.
 - Adds explicit bottom clearance beneath the final card before the 10-day strip.
 - Prevents the final row being clipped while preserving the compact vertical layout.
+
+V4.3 EXTRA BOTTOM SAFETY CLEARANCE
+---------------------------------
+- Keeps 34px dense row spacing.
+- Increases minimum timeline height to 560px.
+- Adds a much larger fixed bottom clearance before the 10-day band.
+- This deliberately leaves obvious empty space below the final card so it is
+  visually clear that no card is being clipped or hidden behind the date strip.

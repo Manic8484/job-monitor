@@ -429,6 +429,61 @@ def update_operation_presentation_state(operation_id):
     })
 
 
+
+def postcode_area(postcode):
+    if not postcode:
+        return ""
+    value = postcode.strip().upper()
+    m = re.match(r"^([A-Z]{1,2}\d[A-Z\d]?)", value)
+    return m.group(1) if m else value.split()[0]
+
+
+def operation_journey(jobs):
+    """
+    Use the linked docket with the most stops as the representative route.
+    For GB-only routes show postcode areas, e.g. EH11 → W1.
+    For any international route show the ordered country-code journey.
+    """
+    jobs_with_stops = [j for j in jobs if j.get("stops")]
+    if not jobs_with_stops:
+        return {
+            "journey_text": "",
+            "international": False,
+            "country_codes": [],
+        }
+
+    representative = max(
+        jobs_with_stops,
+        key=lambda j: (len(j["stops"]), str(j.get("job_ref") or "")),
+    )
+    stops = sorted(representative["stops"], key=lambda s: s.get("drop_order") or 0)
+
+    codes = []
+    for s in stops:
+        code = (s.get("country_code") or "").strip().upper()
+        if code and (not codes or codes[-1] != code):
+            codes.append(code)
+
+    international = any(code not in ("", "GB") for code in codes)
+
+    if international:
+        journey_text = " → ".join(codes) if codes else "International"
+    else:
+        areas = [postcode_area(s.get("postcode")) for s in stops if postcode_area(s.get("postcode"))]
+        if len(areas) >= 2:
+            journey_text = f"{areas[0]} → {areas[-1]}"
+        elif len(areas) == 1:
+            journey_text = areas[0]
+        else:
+            journey_text = "GB"
+
+    return {
+        "journey_text": journey_text,
+        "international": international,
+        "country_codes": codes,
+    }
+
+
 @app.get("/board")
 def board():
     today = datetime.now(LONDON).date()
@@ -633,6 +688,8 @@ def board():
                 "drop_order": s["drop_order"],
             })
 
+        journey = operation_journey(op["jobs"])
+
         base = {
             **op,
             "status": status,
@@ -643,6 +700,9 @@ def board():
             "markers": markers,
             "manual_collected": manual_collected,
             "manual_complete": manual_complete,
+            "journey_text": journey["journey_text"],
+            "international": journey["international"],
+            "country_codes": journey["country_codes"],
         }
 
         # Active Monitoring is strictly a carry-over area:

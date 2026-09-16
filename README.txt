@@ -57,3 +57,10 @@ whose known booked/required start is before today.
 
 Jobs starting today remain on today's 24-hour timeline even after collection.
 Future jobs remain on their actual booked day.
+
+V3.2 CARD JOURNEY TITLES
+------------------------
+- Removed the textual status from card faces; colour remains the status cue.
+- GB-only routes show first and last postcode areas, e.g. EH11 → W1.
+- Routes containing any non-GB stop show ordered country codes, e.g. GB → FR → DE.
+- International cards also carry a small globe/INTL badge on the right.

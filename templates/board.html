@@ -24,6 +24,18 @@ dialog{border:0;border-radius:10px;width:min(900px,92vw);padding:0}.mh{display:f
 .job-block{border:1px solid #dde3ea;border-radius:8px;padding:9px;margin-top:10px}.job-head{display:flex;justify-content:space-between;font-weight:bold}
 table{width:100%;border-collapse:collapse;margin-top:9px;font-size:12px}th,td{padding:5px;border-bottom:1px solid #eee;text-align:left}
 @media(max-width:1200px){.lookahead-days{grid-template-columns:repeat(5,1fr)}}
+
+.card{position:relative}
+.card .journey{display:block;font-size:11px;margin-top:4px;font-weight:700;letter-spacing:.01em}
+.card .intl-badge{
+  position:absolute;right:6px;top:6px;
+  display:flex;align-items:center;gap:3px;
+  padding:2px 5px;border-radius:10px;
+  background:rgba(255,255,255,.92);color:#111827;
+  font-size:9px;font-weight:800;line-height:1;
+  box-shadow:0 1px 2px rgba(0,0,0,.18)
+}
+.card .intl-badge .globe{font-size:11px}
 </style></head><body>
 <header><h1>Management Job Monitor — {{ selected_date.strftime('%d %b %Y') }}</h1><div class="controls"><a href="/board?date={{ prev_date.isoformat() }}">Previous</a><a href="/board">Today</a><a href="/board?date={{ next_date.isoformat() }}">Next</a><input type="date" value="{{ selected_date.isoformat() }}" onchange="window.location='/board?date='+this.value"></div></header>
 <div class="wrap">
@@ -32,7 +44,12 @@ table{width:100%;border-collapse:collapse;margin-top:9px;font-size:12px}th,td{pa
 {% if show_active_column %}
 <aside class="active-column"><div class="active-title">Active monitoring</div><div class="active-stack">
 {% for op in active_operations %}
-<div class="card {{ op.status_class }}" onclick='openDetails({{ op|tojson }})'><strong>{{ op.primary_account }}</strong><span class="sub">{{ op.job_count }} docket{% if op.job_count != 1 %}s{% endif %}{% if op.vehicles %} · {{ op.vehicles|join(", ") }}{% endif %}</span><span class="tiny">{{ op.status }}</span></div>
+<div class="card {{ op.status_class }}" onclick='openDetails({{ op|tojson }})'>
+<strong>{{ op.primary_account }}</strong>
+{% if op.international %}<span class="intl-badge"><span class="globe">🌍</span>INTL</span>{% endif %}
+<span class="sub">{{ op.job_count }} docket{% if op.job_count != 1 %}s{% endif %}{% if op.vehicles %} · {{ op.vehicles|join(", ") }}{% endif %}</span>
+{% if op.journey_text %}<span class="journey">{{ op.journey_text }}</span>{% endif %}
+</div>
 {% else %}<div style="font-size:12px;color:#667085">No active monitored jobs.</div>{% endfor %}
 </div></aside>
 {% endif %}
@@ -44,7 +61,12 @@ table{width:100%;border-collapse:collapse;margin-top:9px;font-size:12px}th,td{pa
 <div class="op-line" style="left:{{ op.left_pct }}%;width:{{ op.markers[-1].left_pct-op.left_pct }}%;top:{{ top+30 }}px"></div>
 {% for m in op.markers %}<div class="marker" style="left:{{ m.left_pct }}%;top:{{ top+31 }}px"></div><div class="marker-label" style="left:{{ m.left_pct }}%;top:{{ top+31 }}px">{{ m.country_code }} {{ m.postcode }}</div>{% endfor %}
 {% endif %}
-<div class="card {{ op.status_class }}" style="left:{{ op.left_pct }}%;width:{{ op.width_pct }}%;top:{{ top }}px" onclick='openDetails({{ op|tojson }})'><strong>{{ op.primary_account }}</strong><span class="sub">{{ op.job_count }} docket{% if op.job_count != 1 %}s{% endif %}{% if op.vehicles %} · {{ op.vehicles|join(", ") }}{% endif %}</span><span class="tiny">{{ op.status }}</span></div>
+<div class="card {{ op.status_class }}" style="left:{{ op.left_pct }}%;width:{{ op.width_pct }}%;top:{{ top }}px" onclick='openDetails({{ op|tojson }})'>
+<strong>{{ op.primary_account }}</strong>
+{% if op.international %}<span class="intl-badge"><span class="globe">🌍</span>INTL</span>{% endif %}
+<span class="sub">{{ op.job_count }} docket{% if op.job_count != 1 %}s{% endif %}{% if op.vehicles %} · {{ op.vehicles|join(", ") }}{% endif %}</span>
+{% if op.journey_text %}<span class="journey">{{ op.journey_text }}</span>{% endif %}
+</div>
 {% endfor %}
 </div></div>
 <div class="lookahead"><div class="lookahead-title">Next 10 days</div><div class="lookahead-days">

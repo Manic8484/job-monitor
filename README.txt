@@ -100,3 +100,13 @@ V3.7 CARD DENSITY / VISIBILITY
   behind one another.
 - Timeline height grows with the number of operations. The page can extend
   vertically rather than clipping or hiding a live/planned card.
+
+V3.8 PLANNING SELECTION FIX
+---------------------------
+Planning membership is now determined by monitor_jobs.booked_at only.
+Different Freedom job_refs are never deduplicated because their content matches.
+Stop timing enriches the route display but cannot remove a booked job from the
+selected-day board.
+
+Today's Active Monitoring is queried separately and contains only older,
+incomplete carry-over jobs.

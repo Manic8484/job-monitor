@@ -498,9 +498,13 @@ def board():
 
     with db_connect(row_factory=dict_row) as conn:
         with conn.cursor() as cur:
+            # PLANNING:
+            # A job belongs on a selected day's planning timeline because its
+            # Freedom booked_at is on that day. Stop timing enriches the card
+            # but cannot remove a booked job from the board.
             cur.execute("""
                 SELECT
-                    o.id AS operation_id,
+                    o.id AS op_id,
                     o.title,
                     o.manual_note,
                     o.manual_collected_at,
@@ -509,54 +513,93 @@ def board():
                     oa.allocation_status,
                     oa.active_job_count,
                     oa.unallocated_job_count,
-                    j.*
-                FROM public.monitor_operations o
-                JOIN public.v_monitor_operation_allocation oa ON oa.operation_id = o.id
-                JOIN public.monitor_jobs j ON j.operation_id = o.id
-                WHERE o.monitoring_enabled = TRUE
-                  AND COALESCE(o.presentation_hidden, FALSE) = FALSE
+                    j.job_ref,
+                    j.operation_id,
+                    j.agent_callsign,
+                    j.driver_firstname,
+                    j.driver_lastname,
+                    j.account,
+                    j.vehicle,
+                    j.vehicle_description,
+                    j.component_role,
+                    j.cancelled_at,
+                    j.booked_at,
+                    j.goods,
+                    j.special_instructions,
+                    j.despatch_instructions,
+                    j.freedom_status,
+                    j.freedom_status_text,
+                    j.monitoring_enabled
+                FROM public.monitor_jobs j
+                JOIN public.monitor_operations o
+                  ON o.id = j.operation_id
+                JOIN public.v_monitor_operation_allocation oa
+                  ON oa.operation_id = o.id
+                WHERE j.booked_at >= %s
+                  AND j.booked_at < %s
                   AND j.monitoring_enabled = TRUE
-                  AND (
-                        (j.booked_at >= %s AND j.booked_at < %s)
-                        OR EXISTS (
-                            SELECT 1 FROM public.monitor_stops s
-                            WHERE s.job_ref = j.job_ref
-                              AND (
-                                (s.required_from >= %s AND s.required_from < %s)
-                                OR (s.date_completed >= %s AND s.date_completed < %s)
-                              )
-                        )
-                        OR (
-                            %s
-                            AND o.manual_completed_at IS NULL
-                            AND EXISTS (
-                                SELECT 1 FROM public.monitor_stops s2
-                                WHERE s2.job_ref = j.job_ref
-                                  AND s2.date_completed IS NULL
-                            )
-                            AND (
-                                (j.booked_at IS NOT NULL AND j.booked_at < %s)
-                                OR EXISTS (
-                                    SELECT 1 FROM public.monitor_stops s3
-                                    WHERE s3.job_ref = j.job_ref
-                                      AND s3.required_from IS NOT NULL
-                                      AND s3.required_from < %s
-                                )
-                            )
-                        )
-                      )
-                ORDER BY o.id, j.job_ref
-            """, (
-                day_start, day_end,
-                day_start, day_end,
-                day_start, day_end,
-                show_active_column,
-                day_start,
-                day_start
-            ))
-            rows = [dict(r) for r in cur.fetchall()]
+                  AND o.monitoring_enabled = TRUE
+                  AND COALESCE(o.presentation_hidden, FALSE) = FALSE
+                ORDER BY j.booked_at, j.job_ref
+            """, (day_start, day_end))
+            planning_rows = [dict(r) for r in cur.fetchall()]
 
-            job_refs = sorted({r["job_ref"] for r in rows})
+            # ACTIVE MONITORING:
+            # Today only: incomplete operations that began before today.
+            carry_rows = []
+            if show_active_column:
+                cur.execute("""
+                    SELECT
+                        o.id AS op_id,
+                        o.title,
+                        o.manual_note,
+                        o.manual_collected_at,
+                        o.manual_completed_at,
+                        o.presentation_hidden,
+                        oa.allocation_status,
+                        oa.active_job_count,
+                        oa.unallocated_job_count,
+                        j.job_ref,
+                        j.operation_id,
+                        j.agent_callsign,
+                        j.driver_firstname,
+                        j.driver_lastname,
+                        j.account,
+                        j.vehicle,
+                        j.vehicle_description,
+                        j.component_role,
+                        j.cancelled_at,
+                        j.booked_at,
+                        j.goods,
+                        j.special_instructions,
+                        j.despatch_instructions,
+                        j.freedom_status,
+                        j.freedom_status_text,
+                        j.monitoring_enabled
+                    FROM public.monitor_jobs j
+                    JOIN public.monitor_operations o
+                      ON o.id = j.operation_id
+                    JOIN public.v_monitor_operation_allocation oa
+                      ON oa.operation_id = o.id
+                    WHERE j.booked_at < %s
+                      AND j.cancelled_at IS NULL
+                      AND j.monitoring_enabled = TRUE
+                      AND o.monitoring_enabled = TRUE
+                      AND COALESCE(o.presentation_hidden, FALSE) = FALSE
+                      AND o.manual_completed_at IS NULL
+                      AND EXISTS (
+                          SELECT 1
+                          FROM public.monitor_stops sx
+                          WHERE sx.job_ref = j.job_ref
+                            AND sx.date_completed IS NULL
+                      )
+                    ORDER BY j.booked_at, j.job_ref
+                """, (day_start,))
+                carry_rows = [dict(r) for r in cur.fetchall()]
+
+            all_rows = planning_rows + carry_rows
+            job_refs = sorted({r["job_ref"] for r in all_rows})
+
             stops_by_job = {}
             if job_refs:
                 cur.execute("""
@@ -568,77 +611,82 @@ def board():
                 for s in cur.fetchall():
                     stops_by_job.setdefault(s["job_ref"], []).append(dict(s))
 
+            # Look-ahead is also based on booked_at, so the day-count tiles and
+            # the planning view use the same rule.
             cur.execute("""
-                SELECT o.id AS operation_id,
-                       COALESCE(
-                         MIN(s.required_from) FILTER (WHERE s.required_from >= %s AND s.required_from < %s),
-                         MIN(j.booked_at) FILTER (WHERE j.booked_at >= %s AND j.booked_at < %s)
-                       ) AS first_dt
-                FROM public.monitor_operations o
-                JOIN public.monitor_jobs j ON j.operation_id = o.id
-                LEFT JOIN public.monitor_stops s ON s.job_ref = j.job_ref
-                WHERE o.monitoring_enabled = TRUE
+                SELECT
+                    (j.booked_at AT TIME ZONE 'Europe/London')::date AS booked_day,
+                    COUNT(DISTINCT j.operation_id) AS operation_count
+                FROM public.monitor_jobs j
+                JOIN public.monitor_operations o
+                  ON o.id = j.operation_id
+                WHERE j.booked_at >= %s
+                  AND j.booked_at < %s
+                  AND j.cancelled_at IS NULL
+                  AND j.monitoring_enabled = TRUE
+                  AND o.monitoring_enabled = TRUE
                   AND COALESCE(o.presentation_hidden, FALSE) = FALSE
                   AND o.manual_completed_at IS NULL
-                  AND j.monitoring_enabled = TRUE
-                  AND j.cancelled_at IS NULL
-                  AND (
-                    (s.required_from >= %s AND s.required_from < %s)
-                    OR (j.booked_at >= %s AND j.booked_at < %s)
-                  )
-                GROUP BY o.id
-            """, (lookahead_start, lookahead_end, lookahead_start, lookahead_end,
-                  lookahead_start, lookahead_end, lookahead_start, lookahead_end))
+                GROUP BY 1
+            """, (lookahead_start, lookahead_end))
             look_rows = [dict(r) for r in cur.fetchall()]
 
-    ops = {}
-    for r in rows:
-        op = ops.setdefault(r["operation_id"], {
-            "operation_id": r["operation_id"],
-            "title": r["title"],
-            "manual_note": r["manual_note"],
-            "manual_collected_at": r["manual_collected_at"],
-            "manual_completed_at": r["manual_completed_at"],
-            "presentation_hidden": bool(r["presentation_hidden"]),
-            "allocation_status": r["allocation_status"],
-            "active_job_count": r["active_job_count"],
-            "unallocated_job_count": r["unallocated_job_count"],
-            "jobs": [],
-        })
-        stops = stops_by_job.get(r["job_ref"], [])
-        all_completed = bool(stops) and all(s["date_completed"] for s in stops)
-        op["jobs"].append({
-            "job_ref": r["job_ref"],
-            "agent_callsign": r["agent_callsign"],
-            "driver_name": " ".join(p for p in [r["driver_firstname"], r["driver_lastname"]] if p),
-            "account": r["account"],
-            "vehicle": r["vehicle"],
-            "vehicle_description": r["vehicle_description"],
-            "component_role": r["component_role"],
-            "cancelled_at": r["cancelled_at"].isoformat() if r["cancelled_at"] else None,
-            "booked_at": r["booked_at"].isoformat() if r["booked_at"] else None,
-            "goods": r["goods"],
-            "special_instructions": r["special_instructions"],
-            "despatch_instructions": r["despatch_instructions"],
-            "freedom_status": r["freedom_status"],
-            "freedom_status_text": r["freedom_status_text"],
-            "active": r["cancelled_at"] is None and not all_completed,
-            "stops": [{
-                "stop_id": s["stop_id"],
-                "drop_order": s["drop_order"],
-                "postcode": s["postcode"],
-                "country": s["country"],
-                "country_code": s["country_code"],
-                "required_from": s["required_from"].isoformat() if s["required_from"] else None,
-                "date_completed": s["date_completed"].isoformat() if s["date_completed"] else None,
-            } for s in stops],
-        })
+    def build_operations(source_rows):
+        ops = {}
+        for r in source_rows:
+            op_id = r["op_id"]
+            op = ops.setdefault(op_id, {
+                "operation_id": op_id,
+                "title": r["title"],
+                "manual_note": r["manual_note"],
+                "manual_collected_at": r["manual_collected_at"],
+                "manual_completed_at": r["manual_completed_at"],
+                "presentation_hidden": bool(r["presentation_hidden"]),
+                "allocation_status": r["allocation_status"],
+                "active_job_count": r["active_job_count"],
+                "unallocated_job_count": r["unallocated_job_count"],
+                "jobs": [],
+            })
 
-    timeline_operations = []
-    active_operations = []
+            stops = stops_by_job.get(r["job_ref"], [])
+            all_completed = bool(stops) and all(s["date_completed"] for s in stops)
+
+            op["jobs"].append({
+                "job_ref": r["job_ref"],
+                "agent_callsign": r["agent_callsign"],
+                "driver_name": " ".join(
+                    p for p in [r["driver_firstname"], r["driver_lastname"]] if p
+                ),
+                "account": r["account"],
+                "vehicle": r["vehicle"],
+                "vehicle_description": r["vehicle_description"],
+                "component_role": r["component_role"],
+                "cancelled_at": r["cancelled_at"].isoformat() if r["cancelled_at"] else None,
+                "booked_at": r["booked_at"].isoformat() if r["booked_at"] else None,
+                "goods": r["goods"],
+                "special_instructions": r["special_instructions"],
+                "despatch_instructions": r["despatch_instructions"],
+                "freedom_status": r["freedom_status"],
+                "freedom_status_text": r["freedom_status_text"],
+                "active": r["cancelled_at"] is None and not all_completed,
+                "stops": [{
+                    "stop_id": s["stop_id"],
+                    "drop_order": s["drop_order"],
+                    "postcode": s["postcode"],
+                    "country": s["country"],
+                    "country_code": s["country_code"],
+                    "required_from": s["required_from"].isoformat() if s["required_from"] else None,
+                    "date_completed": s["date_completed"].isoformat() if s["date_completed"] else None,
+                } for s in stops],
+            })
+        return ops
+
+    planning_ops = build_operations(planning_rows)
+    carry_ops = build_operations(carry_rows)
+
     now = datetime.now(LONDON)
 
-    for op in ops.values():
+    def decorate(op, planning=True):
         timed = []
         active_any = False
         cancelled_all = True
@@ -650,11 +698,15 @@ def board():
             for s in j["stops"]:
                 if s["required_from"]:
                     timed.append((datetime.fromisoformat(s["required_from"]), s, j["job_ref"]))
-            if not j["stops"] and j["booked_at"]:
-                timed.append((datetime.fromisoformat(j["booked_at"]), None, j["job_ref"]))
 
-        timed_today = [x for x in timed if day_start <= x[0] < day_end]
-        anchor = min([x[0] for x in timed_today], default=day_start)
+        # Planning anchor is booked_at, not stop data.
+        booked_times = [
+            datetime.fromisoformat(j["booked_at"])
+            for j in op["jobs"]
+            if j["booked_at"]
+        ]
+        anchor = min(booked_times, default=day_start)
+
         manual_complete = op["manual_completed_at"] is not None
         manual_collected = op["manual_collected_at"] is not None
 
@@ -673,10 +725,15 @@ def board():
 
         accounts = sorted({j["account"] for j in op["jobs"] if j["account"]})
         vehicles = [j["vehicle"] for j in op["jobs"] if j["vehicle"]]
+        journey = operation_journey(op["jobs"])
 
-        sorted_today = sorted(timed_today, key=lambda x: x[0])
+        # First pickup marker remains omitted; later timed stops only.
+        timed_today = sorted(
+            [x for x in timed if day_start <= x[0] < day_end],
+            key=lambda x: x[0]
+        )
         markers = []
-        for dt, s, job_ref in sorted_today[1:]:
+        for dt, s, job_ref in timed_today[1:]:
             if not s:
                 continue
             pct = max(0, min(100, ((dt - day_start).total_seconds() / 86400) * 100))
@@ -688,9 +745,7 @@ def board():
                 "drop_order": s["drop_order"],
             })
 
-        journey = operation_journey(op["jobs"])
-
-        base = {
+        result = {
             **op,
             "status": status,
             "status_class": cls,
@@ -705,50 +760,32 @@ def board():
             "country_codes": journey["country_codes"],
         }
 
-        # Active Monitoring is strictly a carry-over area:
-        # operations that began before today and are still incomplete.
-        # Today's jobs remain on today's timeline even after collection.
-        all_timed = [x[0] for x in timed]
-        earliest_known = min(all_timed, default=None)
+        if planning:
+            result["left_pct"] = max(
+                0,
+                min(100, ((anchor - day_start).total_seconds() / 86400) * 100)
+            )
+            result["width_pct"] = 24 / 1440 * 100
 
-        ongoing = (
-            show_active_column
-            and not manual_complete
-            and not cancelled_all
-            and active_any
-            and earliest_known is not None
-            and earliest_known < day_start
-        )
+        return result
 
-        if ongoing:
-            active_operations.append(base)
-        elif timed_today:
-            left_pct = max(0, min(100, ((anchor - day_start).total_seconds() / 86400) * 100))
-            base["left_pct"] = left_pct
-            base["width_pct"] = 24 / 1440 * 100
-            timeline_operations.append(base)
+    timeline_operations = [decorate(op, planning=True) for op in planning_ops.values()]
+    active_operations = [decorate(op, planning=False) for op in carry_ops.values()]
 
-    active_operations.sort(key=lambda x: (x["status"] != "UNALLOCATED", x["operation_id"]))
     timeline_operations.sort(key=lambda x: (x["left_pct"], x["operation_id"]))
-    # Give every planned operation its own row.
-    # This deliberately favours visibility over a fixed-height board:
-    # cards may extend the page vertically, but no live/planned card is hidden
-    # behind another card when several jobs share the same time.
+    active_operations.sort(key=lambda x: (x["status"] != "UNALLOCATED", x["operation_id"]))
+
     for idx, op in enumerate(timeline_operations):
         op["lane"] = idx
 
     timeline_height = max(460, 62 + max(1, len(timeline_operations)) * 62)
-
     ticks = [{"label": f"{h:02d}:00", "left_pct": h / 24 * 100} for h in range(0, 25, 2)]
 
     counts = {today + timedelta(days=i): 0 for i in range(10)}
     for r in look_rows:
-        dt = r["first_dt"]
-        if not dt:
-            continue
-        d = dt.astimezone(LONDON).date() if getattr(dt, "tzinfo", None) else dt.date()
+        d = r["booked_day"]
         if d in counts:
-            counts[d] += 1
+            counts[d] = r["operation_count"]
 
     lookahead_days = []
     for i in range(10):

@@ -130,3 +130,15 @@ V4.0 TIMELINE EXPANSION / CARD WIDTH
 - Planning-card account names, job/vehicle line and journey no longer wrap.
 - Timeline cards are allowed to grow horizontally to fit their content.
 - Active Monitoring cards still wrap normally inside the fixed left column.
+
+V4.1 DENSER ROW SPACING
+-----------------------
+- Planning row pitch reduced from 68px to 34px.
+- Timeline height calculation updated to match.
+- Marker vertical offsets tightened slightly.
+
+V4.2 TIMELINE BOTTOM CLEARANCE
+------------------------------
+- Keeps the 34px dense row spacing from V4.1.
+- Adds explicit bottom clearance beneath the final card before the 10-day strip.
+- Prevents the final row being clipped while preserving the compact vertical layout.

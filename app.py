@@ -779,7 +779,12 @@ def board():
 
     # Height must grow with every visible planning row.
     # Row pitch in the template is 68px, with room above/below the first/last card.
-    timeline_height = max(460, 80 + max(1, len(timeline_operations)) * 68)
+    # Keep the denser 34px row pitch, but add enough bottom clearance for
+    # the full final card (including border/shadow) before the 10-day strip.
+    timeline_height = max(
+        500,
+        120 + max(1, len(timeline_operations)) * 34
+    )
     ticks = [{"label": f"{h:02d}:00", "left_pct": h / 24 * 100} for h in range(0, 25, 2)]
 
     counts = {today + timedelta(days=i): 0 for i in range(10)}

@@ -479,10 +479,26 @@ def board():
                                 WHERE s2.job_ref = j.job_ref
                                   AND s2.date_completed IS NULL
                             )
+                            AND (
+                                (j.booked_at IS NOT NULL AND j.booked_at < %s)
+                                OR EXISTS (
+                                    SELECT 1 FROM public.monitor_stops s3
+                                    WHERE s3.job_ref = j.job_ref
+                                      AND s3.required_from IS NOT NULL
+                                      AND s3.required_from < %s
+                                )
+                            )
                         )
                       )
                 ORDER BY o.id, j.job_ref
-            """, (day_start, day_end, day_start, day_end, day_start, day_end, show_active_column))
+            """, (
+                day_start, day_end,
+                day_start, day_end,
+                day_start, day_end,
+                show_active_column,
+                day_start,
+                day_start
+            ))
             rows = [dict(r) for r in cur.fetchall()]
 
             job_refs = sorted({r["job_ref"] for r in rows})
@@ -629,14 +645,19 @@ def board():
             "manual_complete": manual_complete,
         }
 
+        # Active Monitoring is strictly a carry-over area:
+        # operations that began before today and are still incomplete.
+        # Today's jobs remain on today's timeline even after collection.
+        all_timed = [x[0] for x in timed]
+        earliest_known = min(all_timed, default=None)
+
         ongoing = (
             show_active_column
             and not manual_complete
             and not cancelled_all
-            and (
-                manual_collected
-                or (active_any and (not timed_today or anchor <= now))
-            )
+            and active_any
+            and earliest_known is not None
+            and earliest_known < day_start
         )
 
         if ongoing:

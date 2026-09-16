@@ -48,3 +48,12 @@ GET /board
 Default 7-day view plus active jobs. Red=unallocated, amber=active, blue=future, green=complete.
 
 V3: run 002_monitor_presentation_controls.sql before deploy. Adds current-day active column, smaller cards, removes first pickup marker, and modal controls for Collected/Complete/Hide.
+
+
+V3.1 ACTIVE MONITORING RULE
+---------------------------
+On the Today screen, Active Monitoring contains only incomplete operations
+whose known booked/required start is before today.
+
+Jobs starting today remain on today's 24-hour timeline even after collection.
+Future jobs remain on their actual booked day.

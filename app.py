@@ -730,8 +730,14 @@ def board():
 
     active_operations.sort(key=lambda x: (x["status"] != "UNALLOCATED", x["operation_id"]))
     timeline_operations.sort(key=lambda x: (x["left_pct"], x["operation_id"]))
+    # Give every planned operation its own row.
+    # This deliberately favours visibility over a fixed-height board:
+    # cards may extend the page vertically, but no live/planned card is hidden
+    # behind another card when several jobs share the same time.
     for idx, op in enumerate(timeline_operations):
-        op["lane"] = idx % 5
+        op["lane"] = idx
+
+    timeline_height = max(460, 62 + max(1, len(timeline_operations)) * 62)
 
     ticks = [{"label": f"{h:02d}:00", "left_pct": h / 24 * 100} for h in range(0, 25, 2)]
 
@@ -764,6 +770,7 @@ def board():
         prev_date=selected_date - timedelta(days=1),
         next_date=selected_date + timedelta(days=1),
         lookahead_days=lookahead_days,
+        timeline_height=timeline_height,
     )
 
 if __name__ == "__main__":

@@ -90,3 +90,13 @@ V3.6 JOB IDENTITY ON CARDS
 - If an operation later contains multiple linked jobs, the card shows the count
   rather than pretending they are duplicates.
 - job_ref remains the immutable identity; matching content never merges jobs.
+
+V3.7 CARD DENSITY / VISIBILITY
+------------------------------
+- Planned cards are around 20% smaller again.
+- Account/title text is smaller and tighter to reduce multi-line card growth.
+- Planning cards no longer recycle through five lanes.
+- Every planned operation gets its own row, so identical-time jobs cannot sit
+  behind one another.
+- Timeline height grows with the number of operations. The page can extend
+  vertically rather than clipping or hiding a live/planned card.

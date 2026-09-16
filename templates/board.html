@@ -51,7 +51,13 @@ table{width:100%;border-collapse:collapse;margin-top:9px;font-size:12px}th,td{pa
 <div class="card {{ op.status_class }}" onclick='openDetails({{ op|tojson }})'>
 <strong>{{ op.primary_account }}</strong>
 {% if op.international %}<span class="intl-badge"><span class="globe">🌍</span>INTL</span>{% endif %}
-<span class="sub">{{ op.job_count }} docket{% if op.job_count != 1 %}s{% endif %}{% if op.vehicles %} · {{ op.vehicles|join(", ") }}{% endif %}</span>
+<span class="sub">
+  {% if op.jobs|length == 1 %}
+    {{ op.jobs[0].job_ref }}{% if op.vehicles %} · {{ op.vehicles|join(", ") }}{% endif %}
+  {% else %}
+    {{ op.job_count }} jobs{% if op.vehicles %} · {{ op.vehicles|join(", ") }}{% endif %}
+  {% endif %}
+</span>
 {% if op.journey_text %}<span class="journey">{{ op.journey_text }}</span>{% endif %}
 </div>
 {% else %}<div style="font-size:12px;color:#667085">No active monitored jobs.</div>{% endfor %}
@@ -68,7 +74,13 @@ table{width:100%;border-collapse:collapse;margin-top:9px;font-size:12px}th,td{pa
 <div class="card {{ op.status_class }}" style="left:{{ op.left_pct }}%;width:{{ op.width_pct }}%;top:{{ top }}px" onclick='openDetails({{ op|tojson }})'>
 <strong>{{ op.primary_account }}</strong>
 {% if op.international %}<span class="intl-badge"><span class="globe">🌍</span>INTL</span>{% endif %}
-<span class="sub">{{ op.job_count }} docket{% if op.job_count != 1 %}s{% endif %}{% if op.vehicles %} · {{ op.vehicles|join(", ") }}{% endif %}</span>
+<span class="sub">
+  {% if op.jobs|length == 1 %}
+    {{ op.jobs[0].job_ref }}{% if op.vehicles %} · {{ op.vehicles|join(", ") }}{% endif %}
+  {% else %}
+    {{ op.job_count }} jobs{% if op.vehicles %} · {{ op.vehicles|join(", ") }}{% endif %}
+  {% endif %}
+</span>
 {% if op.journey_text %}<span class="journey">{{ op.journey_text }}</span>{% endif %}
 </div>
 {% endfor %}

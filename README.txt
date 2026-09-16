@@ -83,3 +83,10 @@ Removed the repeated driver / tariff / goods summary above the lower stop table.
 The lead job block at the top remains the single summary.
 For multi-docket operations, the lower section keeps only a small Job heading
 before each stop table so the tables remain attributable.
+
+V3.6 JOB IDENTITY ON CARDS
+--------------------------
+- Single-job operations now show the Freedom job_ref directly on the card.
+- If an operation later contains multiple linked jobs, the card shows the count
+  rather than pretending they are duplicates.
+- job_ref remains the immutable identity; matching content never merges jobs.

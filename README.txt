@@ -71,3 +71,8 @@ V3.3 MODAL JOB SUMMARY
 - Driver now displays as Callsign · Firstname Lastname.
 - Vehicle now displays as Tariff code · Vehicle Description.
 - Goods line unchanged.
+
+V3.4 MODAL ORDER
+----------------
+Lead job summary is now immediately below the modal title
+(Account — Status) and above the Operation ID / Allocation metadata.

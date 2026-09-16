@@ -76,3 +76,10 @@ V3.4 MODAL ORDER
 ----------------
 Lead job summary is now immediately below the modal title
 (Account — Status) and above the Operation ID / Allocation metadata.
+
+V3.5 MODAL DEDUPLICATION
+------------------------
+Removed the repeated driver / tariff / goods summary above the lower stop table.
+The lead job block at the top remains the single summary.
+For multi-docket operations, the lower section keeps only a small Job heading
+before each stop table so the tables remain attributable.

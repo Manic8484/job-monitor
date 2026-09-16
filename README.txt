@@ -150,3 +150,11 @@ V4.3 EXTRA BOTTOM SAFETY CLEARANCE
 - Adds a much larger fixed bottom clearance before the 10-day band.
 - This deliberately leaves obvious empty space below the final card so it is
   visually clear that no card is being clipped or hidden behind the date strip.
+
+V4.4 STRONGER BOTTOM SAFETY ZONE
+--------------------------------
+- Keeps 34px row spacing.
+- Raises minimum timeline height to 620px.
+- Adds a much larger bottom safety zone below the final card before the 10-day band.
+- The empty area is intentionally greater than the normal row separation so it is
+  visually obvious that no further cards are hidden below.

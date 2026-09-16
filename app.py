@@ -782,8 +782,8 @@ def board():
     # Keep the denser 34px row pitch, but add enough bottom clearance for
     # the full final card (including border/shadow) before the 10-day strip.
     timeline_height = max(
-        560,
-        200 + max(1, len(timeline_operations)) * 34
+        620,
+        280 + max(1, len(timeline_operations)) * 34
     )
     ticks = [{"label": f"{h:02d}:00", "left_pct": h / 24 * 100} for h in range(0, 25, 2)]
 

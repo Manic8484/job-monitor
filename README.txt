@@ -64,3 +64,10 @@ V3.2 CARD JOURNEY TITLES
 - GB-only routes show first and last postcode areas, e.g. EH11 → W1.
 - Routes containing any non-GB stop show ordered country codes, e.g. GB → FR → DE.
 - International cards also carry a small globe/INTL badge on the right.
+
+V3.3 MODAL JOB SUMMARY
+----------------------
+- Lead job summary moved directly under the account/status summary.
+- Driver now displays as Callsign · Firstname Lastname.
+- Vehicle now displays as Tariff code · Vehicle Description.
+- Goods line unchanged.

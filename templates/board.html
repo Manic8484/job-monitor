@@ -36,6 +36,10 @@ table{width:100%;border-collapse:collapse;margin-top:9px;font-size:12px}th,td{pa
   box-shadow:0 1px 2px rgba(0,0,0,.18)
 }
 .card .intl-badge .globe{font-size:11px}
+
+.job-summary-top{margin:12px 0 14px;border:1px solid #dde3ea;border-radius:8px;padding:10px;background:#f8fafc}
+.job-summary-top .job-head{display:flex;justify-content:space-between;gap:12px;font-weight:bold;margin-bottom:6px}
+.job-summary-top .line{margin-top:4px}
 </style></head><body>
 <header><h1>Management Job Monitor — {{ selected_date.strftime('%d %b %Y') }}</h1><div class="controls"><a href="/board?date={{ prev_date.isoformat() }}">Previous</a><a href="/board">Today</a><a href="/board?date={{ next_date.isoformat() }}">Next</a><input type="date" value="{{ selected_date.isoformat() }}" onchange="window.location='/board?date='+this.value"></div></header>
 <div class="wrap">
@@ -72,10 +76,81 @@ table{width:100%;border-collapse:collapse;margin-top:9px;font-size:12px}th,td{pa
 <div class="lookahead"><div class="lookahead-title">Next 10 days</div><div class="lookahead-days">
 {% for d in lookahead_days %}<a class="day-box {% if d.count > 0 %}has-movements{% endif %} {% if d.selected %}selected{% endif %} {% if d.today %}today{% endif %}" href="/board?date={{ d.date.isoformat() }}"><div class="day-name">{{ d.date.strftime('%a') }}</div><div class="day-date">{{ d.date.strftime('%d %b') }}</div><div class="day-count">{% if d.count > 0 %}{{ d.count }} operation{% if d.count != 1 %}s{% endif %}{% else %}No operations{% endif %}</div></a>{% endfor %}
 </div></div></div>
-<dialog id="details"><div class="mh"><strong id="mt">Operation</strong><button class="close" onclick="details.close()">×</button></div><div class="mb"><div class="grid2" id="summary"></div><div class="state-box"><label><input type="checkbox" id="state-collected"> Collected</label><label><input type="checkbox" id="state-complete"> Complete</label><label><input type="checkbox" id="state-hidden"> Hide from presentation</label><button class="save-state" onclick="saveState()">Save</button></div><div id="jobs"></div></div></dialog>
+<dialog id="details"><div class="mh"><strong id="mt">Operation</strong><button class="close" onclick="details.close()">×</button></div><div class="mb"><div class="grid2" id="summary"></div><div id="job-summary-top" class="job-summary-top"></div><div class="state-box"><label><input type="checkbox" id="state-collected"> Collected</label><label><input type="checkbox" id="state-complete"> Complete</label><label><input type="checkbox" id="state-hidden"> Hide from presentation</label><button class="save-state" onclick="saveState()">Save</button></div><div id="jobs"></div></div></dialog>
 <script>
 let currentOperation=null;
 function fmt(v){if(v===null||v===undefined||v==="")return"—";if(typeof v==="string"&&v.includes("T")){const d=new Date(v);if(!isNaN(d))return d.toLocaleString("en-GB",{hour12:false});}return v;}
-function openDetails(op){currentOperation=op;mt.textContent=op.primary_account+" — "+op.status;document.getElementById("state-collected").checked=!!op.manual_collected;document.getElementById("state-complete").checked=!!op.manual_complete;document.getElementById("state-hidden").checked=!!op.presentation_hidden;const rows=[["Operation ID",op.operation_id],["Allocation",op.allocation_status],["Active dockets",op.active_job_count],["Unallocated dockets",op.unallocated_job_count],["Note",op.manual_note]];summary.innerHTML="";for(const [l,v] of rows){const a=document.createElement("div");a.className="lab";a.textContent=l;const b=document.createElement("div");b.textContent=fmt(v);summary.append(a,b);}jobs.innerHTML="";for(const j of op.jobs){const block=document.createElement("div");block.className="job-block";const head=document.createElement("div");head.className="job-head";head.innerHTML="<span>Job "+j.job_ref+"</span><span>"+(j.agent_callsign||"UNALLOCATED")+"</span>";block.appendChild(head);const p=document.createElement("div");p.style.marginTop="6px";p.textContent=(j.vehicle||"")+(j.component_role?" · "+j.component_role:"")+(j.freedom_status?" · "+j.freedom_status:"");block.appendChild(p);const g=document.createElement("div");g.style.marginTop="6px";g.textContent="Goods: "+(j.goods||"—");block.appendChild(g);const t=document.createElement("table");t.innerHTML="<thead><tr><th>Stop</th><th>Country</th><th>Postcode</th><th>Required</th><th>Completed</th></tr></thead>";const tb=document.createElement("tbody");for(const s of j.stops){const tr=document.createElement("tr");for(const x of [s.drop_order,s.country_code||s.country,s.postcode,fmt(s.required_from),fmt(s.date_completed)]){const td=document.createElement("td");td.textContent=x??"—";tr.appendChild(td);}tb.appendChild(tr);}t.appendChild(tb);block.appendChild(t);jobs.appendChild(block);}details.showModal();}
+function openDetails(op){
+currentOperation=op;
+mt.textContent=op.primary_account+" — "+op.status;
+document.getElementById("state-collected").checked=!!op.manual_collected;
+document.getElementById("state-complete").checked=!!op.manual_complete;
+document.getElementById("state-hidden").checked=!!op.presentation_hidden;
+
+const rows=[["Operation ID",op.operation_id],["Allocation",op.allocation_status],["Active dockets",op.active_job_count],["Unallocated dockets",op.unallocated_job_count],["Note",op.manual_note]];
+summary.innerHTML="";
+for(const [l,v] of rows){
+  const a=document.createElement("div");a.className="lab";a.textContent=l;
+  const b=document.createElement("div");b.textContent=fmt(v);
+  summary.append(a,b);
+}
+
+const top=document.getElementById("job-summary-top");
+top.innerHTML="";
+if(op.jobs.length){
+  const j=op.jobs[0];
+
+  const head=document.createElement("div");
+  head.className="job-head";
+  const driverBits=[j.agent_callsign||"UNALLOCATED",j.driver_name||""].filter(Boolean).join(" · ");
+  head.innerHTML="<span>Job "+j.job_ref+"</span><span>"+driverBits+"</span>";
+  top.appendChild(head);
+
+  const vehicle=document.createElement("div");
+  vehicle.className="line";
+  const vehicleBits=[j.vehicle||"",j.vehicle_description||""].filter(Boolean).join(" · ");
+  vehicle.textContent=vehicleBits||"—";
+  top.appendChild(vehicle);
+
+  const goods=document.createElement("div");
+  goods.className="line";
+  goods.textContent="Goods: "+(j.goods||"—");
+  top.appendChild(goods);
+}
+
+jobs.innerHTML="";
+for(const j of op.jobs){
+  const block=document.createElement("div");block.className="job-block";
+
+  const head=document.createElement("div");head.className="job-head";
+  const driverBits=[j.agent_callsign||"UNALLOCATED",j.driver_name||""].filter(Boolean).join(" · ");
+  head.innerHTML="<span>Job "+j.job_ref+"</span><span>"+driverBits+"</span>";
+  block.appendChild(head);
+
+  const p=document.createElement("div");p.style.marginTop="6px";
+  const vehicleBits=[j.vehicle||"",j.vehicle_description||""].filter(Boolean).join(" · ");
+  p.textContent=vehicleBits+(j.component_role?" · "+j.component_role:"")+(j.freedom_status?" · "+j.freedom_status:"");
+  block.appendChild(p);
+
+  const g=document.createElement("div");g.style.marginTop="6px";
+  g.textContent="Goods: "+(j.goods||"—");
+  block.appendChild(g);
+
+  const t=document.createElement("table");
+  t.innerHTML="<thead><tr><th>Stop</th><th>Country</th><th>Postcode</th><th>Required</th><th>Completed</th></tr></thead>";
+  const tb=document.createElement("tbody");
+  for(const s of j.stops){
+    const tr=document.createElement("tr");
+    for(const x of [s.drop_order,s.country_code||s.country,s.postcode,fmt(s.required_from),fmt(s.date_completed)]){
+      const td=document.createElement("td");td.textContent=x??"—";tr.appendChild(td);
+    }
+    tb.appendChild(tr);
+  }
+  t.appendChild(tb);
+  block.appendChild(t);
+  jobs.appendChild(block);
+}
+details.showModal();
+}
 async function saveState(){if(!currentOperation)return;const response=await fetch("/operations/"+currentOperation.operation_id+"/presentation-state",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({collected:document.getElementById("state-collected").checked,complete:document.getElementById("state-complete").checked,hidden:document.getElementById("state-hidden").checked})});const data=await response.json();if(!response.ok||!data.ok){alert(data.error||"Could not save operation state");return;}window.location.reload();}
 </script></body></html>

@@ -66,10 +66,10 @@ table{width:100%;border-collapse:collapse;margin-top:9px;font-size:12px}th,td{pa
 <div class="timeline" style="height:{{ timeline_height }}px">
 {% for t in ticks %}<div class="grid" style="left:{{ t.left_pct }}%"></div><div class="tick" style="left:{{ t.left_pct }}%">{{ t.label }}</div>{% endfor %}
 {% for op in timeline_operations %}
-{% set top = 48 + op.lane*34 %}
+{% set top = 48 + op.lane*68 %}
 {% if op.markers %}
-<div class="op-line" style="left:{{ op.left_pct }}%;width:{{ op.markers[-1].left_pct-op.left_pct }}%;top:{{ top+22 }}px"></div>
-{% for m in op.markers %}<div class="marker" style="left:{{ m.left_pct }}%;top:{{ top+23 }}px"></div><div class="marker-label" style="left:{{ m.left_pct }}%;top:{{ top+23 }}px">{{ m.country_code }} {{ m.postcode }}</div>{% endfor %}
+<div class="op-line" style="left:{{ op.left_pct }}%;width:{{ op.markers[-1].left_pct-op.left_pct }}%;top:{{ top+24 }}px"></div>
+{% for m in op.markers %}<div class="marker" style="left:{{ m.left_pct }}%;top:{{ top+25 }}px"></div><div class="marker-label" style="left:{{ m.left_pct }}%;top:{{ top+25 }}px">{{ m.country_code }} {{ m.postcode }}</div>{% endfor %}
 {% endif %}
 <div class="card {{ op.status_class }}" style="left:{{ op.left_pct }}%;top:{{ top }}px" onclick='openDetails({{ op|tojson }})'>
 <strong>{{ op.primary_account }}</strong>

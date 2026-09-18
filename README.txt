@@ -190,3 +190,9 @@ V4.8 ROW SPACING
 ----------------
 - Timeline row height increased from 54px to 64px.
 - Leaves a clear visual gap between compact cards while retaining the responsive layout.
+
+V4.9 DISPLAY AUTO-REFRESH
+-------------------------
+- Board reloads automatically every 5 minutes (300,000 ms).
+- Reload preserves the current URL, including any selected ?date= value.
+- Intended for unattended management/display boards.

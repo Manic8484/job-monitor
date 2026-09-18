@@ -25,7 +25,7 @@ dialog{border:0;border-radius:10px;width:min(900px,92vw);padding:0}.mh{display:f
 table{width:100%;border-collapse:collapse;margin-top:9px;font-size:12px}th,td{padding:5px;border-bottom:1px solid #eee;text-align:left}
 @media(max-width:1200px){.lookahead-days{grid-template-columns:repeat(5,1fr)}}
 </style></head><body>
-<header><h1>Management Job Monitor — {{ selected_date.strftime('%d %b %Y') }}</h1><div class="controls"><a href="/board?date={{ prev_date.isoformat() }}">Previous</a><a href="/board">Today</a><a href="/board?date={{ next_date.isoformat() }}">Next</a><input type="date" value="{{ selected_date.isoformat() }}" onchange="window.location='/board?date='+this.value"></div></header>
+<header><h1>Management Monitor — {{ selected_date.strftime('%d %b %Y') }}</h1><div class="controls"><a href="/board?date={{ prev_date.isoformat() }}">Previous</a><a href="/board">Today</a><a href="/board?date={{ next_date.isoformat() }}">Next</a><input type="date" value="{{ selected_date.isoformat() }}" onchange="window.location='/board?date='+this.value"></div></header>
 <div class="wrap">
 <div class="legend"><span><i class="sw" style="background:#dc2626"></i>Unallocated / at risk</span><span><i class="sw" style="background:#f59e0b"></i>Active</span><span><i class="sw" style="background:#2563eb"></i>Future</span><span><i class="sw" style="background:#16a34a"></i>Complete</span></div>
 <div class="board-row {% if not show_active_column %}planning-only{% endif %}">

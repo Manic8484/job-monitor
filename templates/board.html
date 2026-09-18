@@ -43,7 +43,7 @@ table{width:100%;border-collapse:collapse;margin-top:9px;font-size:12px}th,td{pa
 .job-summary-top .job-head{display:flex;justify-content:space-between;gap:12px;font-weight:bold;margin-bottom:6px}
 .job-summary-top .line{margin-top:4px}
 </style></head><body>
-<header><h1>Management Job Monitor — {{ selected_date.strftime('%d %b %Y') }}</h1><div class="controls"><a href="/board?date={{ prev_date.isoformat() }}">Previous</a><a href="/board">Today</a><a href="/board?date={{ next_date.isoformat() }}">Next</a><input type="date" value="{{ selected_date.isoformat() }}" onchange="window.location='/board?date='+this.value"></div></header>
+<header><h1>Management Monitor — {{ selected_date.strftime('%d %b %Y') }}</h1><div class="controls"><a href="/board?date={{ prev_date.isoformat() }}">Previous</a><a href="/board">Today</a><a href="/board?date={{ next_date.isoformat() }}">Next</a><input type="date" value="{{ selected_date.isoformat() }}" onchange="window.location='/board?date='+this.value"></div></header>
 <div class="wrap">
 <div class="legend"><span><i class="sw" style="background:#dc2626"></i>Unallocated / at risk</span><span><i class="sw" style="background:#f59e0b"></i>Active</span><span><i class="sw" style="background:#2563eb"></i>Future</span><span><i class="sw" style="background:#16a34a"></i>Complete</span><span style="margin-left:auto;font-weight:bold">{{ planned_count }} planned operation{% if planned_count != 1 %}s{% endif %}</span></div>
 <div class="board-row {% if not show_active_column %}planning-only{% endif %}">

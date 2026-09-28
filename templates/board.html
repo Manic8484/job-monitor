@@ -9,10 +9,12 @@ h1{margin:0;font-size:21px}.controls{display:flex;gap:6px;align-items:center}.co
 .wrap{padding:14px}.legend{display:flex;gap:14px;margin-bottom:9px;font-size:12px}.sw{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:5px;vertical-align:-2px}
 .board-row{display:grid;grid-template-columns:220px 1fr;gap:12px}.board-row.planning-only{grid-template-columns:1fr}
 .active-column{background:#fff;border:1px solid #d8dee8;border-radius:9px;padding:9px;min-height:500px}.active-title{font-size:13px;font-weight:bold;margin-bottom:8px}.active-stack{display:flex;flex-direction:column;gap:8px}
-.timeline{position:relative;background:#fff;border:1px solid #d8dee8;border-radius:9px;overflow:hidden;margin-bottom:10px}
+.timeline-wrap{min-width:0}
+.timeline-ruler{position:sticky;top:0;z-index:20;height:28px;background:#fff;border:1px solid #d8dee8;border-radius:9px 9px 0 0;box-shadow:0 2px 4px rgba(0,0,0,.08)}
+.timeline{position:relative;background:#fff;border:1px solid #d8dee8;border-top:0;border-radius:0 0 9px 9px;overflow:hidden;margin-bottom:10px}
 .grid{position:absolute;top:0;bottom:0;border-left:1px solid #e0e5ec}
-.timeline-rows{position:relative;padding-top:48px;padding-bottom:170px}
-.timeline-row{position:relative;height:64px}.tick{position:absolute;top:4px;transform:translateX(-50%);font-size:10px;color:#475467}
+.timeline-rows{position:relative;padding-top:20px;padding-bottom:170px}
+.timeline-row{position:relative;height:64px}.tick{position:absolute;top:7px;transform:translateX(-50%);font-size:10px;color:#475467;font-weight:600;white-space:nowrap}
 .op-line{position:absolute;height:4px;border-radius:3px;background:#93a4b8;z-index:1}.marker{position:absolute;width:12px;height:12px;border-radius:50%;background:#111827;border:2px solid #fff;box-shadow:0 0 0 1px #111827;transform:translate(-50%,-50%);z-index:3}
 .marker-label{position:absolute;transform:translate(-50%,-145%);white-space:nowrap;font-size:10px;font-weight:bold;background:#fff;padding:2px 4px;border-radius:4px;box-shadow:0 1px 2px rgba(0,0,0,.12);z-index:4}
 .card{position:absolute;width:max-content;min-width:128px;min-height:46px;border-radius:7px;padding:5px 7px;box-shadow:0 2px 5px rgba(0,0,0,.18);cursor:pointer;z-index:5;border:2px solid rgba(0,0,0,.12);font-size:11px;line-height:1.08}
@@ -65,8 +67,12 @@ table{width:100%;border-collapse:collapse;margin-top:9px;font-size:12px}th,td{pa
 {% else %}<div style="font-size:12px;color:#667085">No active monitored jobs.</div>{% endfor %}
 </div></aside>
 {% endif %}
+<div class="timeline-wrap">
+<div class="timeline-ruler">
+{% for t in ticks %}<div class="tick" style="left:{{ t.left_pct }}%">{{ t.label }}</div>{% endfor %}
+</div>
 <div class="timeline">
-{% for t in ticks %}<div class="grid" style="left:{{ t.left_pct }}%"></div><div class="tick" style="left:{{ t.left_pct }}%">{{ t.label }}</div>{% endfor %}
+{% for t in ticks %}<div class="grid" style="left:{{ t.left_pct }}%"></div>{% endfor %}
 <div class="timeline-rows">
 {% for op in timeline_operations %}
 <div class="timeline-row">
@@ -91,6 +97,7 @@ table{width:100%;border-collapse:collapse;margin-top:9px;font-size:12px}th,td{pa
 </div>
 </div>
 {% endfor %}
+</div>
 </div>
 </div></div>
 <div class="lookahead"><div class="lookahead-title">Next 10 days</div><div class="lookahead-days">

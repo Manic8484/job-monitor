@@ -10,7 +10,7 @@ h1{margin:0;font-size:21px}.controls{display:flex;gap:6px;align-items:center}.co
 .board-row{display:grid;grid-template-columns:220px 1fr;gap:12px}.board-row.planning-only{grid-template-columns:1fr}
 .active-column{background:#fff;border:1px solid #d8dee8;border-radius:9px;padding:9px;min-height:500px}.active-title{font-size:13px;font-weight:bold;margin-bottom:8px}.active-stack{display:flex;flex-direction:column;gap:8px}
 .timeline-wrap{position:relative;min-width:0}
-.timeline-ruler{position:relative;height:24px;background:#fff;border:1px solid #d8dee8;border-bottom:1px solid #e8edf3;border-radius:9px 9px 0 0;z-index:20}.timeline-ruler.is-fixed{position:fixed;top:0;border-radius:0;z-index:1000;box-shadow:0 2px 6px rgba(0,0,0,.12)}
+.timeline-ruler{position:sticky;top:0;height:24px;background:#fff;border:1px solid #d8dee8;border-bottom:1px solid #e8edf3;border-radius:9px 9px 0 0;z-index:20}
 .timeline{position:relative;height:500px;background:#fff;border:1px solid #d8dee8;border-top:0;border-radius:0 0 9px 9px;overflow:hidden}
 .grid{position:absolute;top:0;bottom:0;border-left:1px solid #e0e5ec}.tick{position:absolute;top:6px;transform:translateX(-50%);font-size:10px;color:#475467;white-space:nowrap}
 .op-line{position:absolute;height:4px;border-radius:3px;background:#93a4b8;z-index:1}.marker{position:absolute;width:12px;height:12px;border-radius:50%;background:#111827;border:2px solid #fff;box-shadow:0 0 0 1px #111827;transform:translate(-50%,-50%);z-index:3}
@@ -39,7 +39,7 @@ table{width:100%;border-collapse:collapse;margin-top:9px;font-size:12px}th,td{pa
 </div></aside>
 {% endif %}
 <div class="timeline-wrap">
-<div class="timeline-ruler" id="timeline-ruler">{% for t in ticks %}<div class="tick" style="left:{{ t.left_pct }}%">{{ t.label }}</div>{% endfor %}</div>
+<div class="timeline-ruler">{% for t in ticks %}<div class="tick" style="left:{{ t.left_pct }}%">{{ t.label }}</div>{% endfor %}</div>
 <div class="timeline">
 {% for t in ticks %}<div class="grid" style="left:{{ t.left_pct }}%"></div>{% endfor %}
 {% for op in timeline_operations %}
@@ -57,27 +57,6 @@ table{width:100%;border-collapse:collapse;margin-top:9px;font-size:12px}th,td{pa
 <dialog id="details"><div class="mh"><strong id="mt">Operation</strong><button class="close" onclick="details.close()">×</button></div><div class="mb"><div class="grid2" id="summary"></div><div class="state-box"><label><input type="checkbox" id="state-collected"> Collected</label><label><input type="checkbox" id="state-complete"> Complete</label><label><input type="checkbox" id="state-hidden"> Hide from presentation</label><button class="save-state" onclick="saveState()">Save</button></div><div id="jobs"></div></div></dialog>
 <script>
 let currentOperation=null;
-function updateTimelineRuler(){
-  const wrap=document.querySelector('.timeline-wrap');
-  const ruler=document.getElementById('timeline-ruler');
-  if(!wrap||!ruler)return;
-  const r=wrap.getBoundingClientRect();
-  const h=ruler.offsetHeight||24;
-  const shouldFix=r.top<=0 && r.bottom>h;
-  if(shouldFix){
-    ruler.classList.add('is-fixed');
-    ruler.style.left=r.left+'px';
-    ruler.style.width=r.width+'px';
-  }else{
-    ruler.classList.remove('is-fixed');
-    ruler.style.left='';
-    ruler.style.width='';
-  }
-}
-window.addEventListener('scroll',updateTimelineRuler,{passive:true});
-window.addEventListener('resize',updateTimelineRuler);
-window.addEventListener('load',updateTimelineRuler);
-
 function fmt(v){if(v===null||v===undefined||v==="")return"—";if(typeof v==="string"&&v.includes("T")){const d=new Date(v);if(!isNaN(d))return d.toLocaleString("en-GB",{hour12:false});}return v;}
 function openDetails(op){currentOperation=op;mt.textContent=op.primary_account+" — "+op.status;document.getElementById("state-collected").checked=!!op.manual_collected;document.getElementById("state-complete").checked=!!op.manual_complete;document.getElementById("state-hidden").checked=!!op.presentation_hidden;const rows=[["Operation ID",op.operation_id],["Allocation",op.allocation_status],["Active dockets",op.active_job_count],["Unallocated dockets",op.unallocated_job_count],["Note",op.manual_note]];summary.innerHTML="";for(const [l,v] of rows){const a=document.createElement("div");a.className="lab";a.textContent=l;const b=document.createElement("div");b.textContent=fmt(v);summary.append(a,b);}jobs.innerHTML="";for(const j of op.jobs){const block=document.createElement("div");block.className="job-block";const head=document.createElement("div");head.className="job-head";head.innerHTML="<span>Job "+j.job_ref+"</span><span>"+(j.agent_callsign||"UNALLOCATED")+"</span>";block.appendChild(head);const p=document.createElement("div");p.style.marginTop="6px";p.textContent=(j.vehicle||"")+(j.component_role?" · "+j.component_role:"")+(j.freedom_status?" · "+j.freedom_status:"");block.appendChild(p);const g=document.createElement("div");g.style.marginTop="6px";g.textContent="Goods: "+(j.goods||"—");block.appendChild(g);const t=document.createElement("table");t.innerHTML="<thead><tr><th>Stop</th><th>Country</th><th>Postcode</th><th>Required</th><th>Completed</th></tr></thead>";const tb=document.createElement("tbody");for(const s of j.stops){const tr=document.createElement("tr");for(const x of [s.drop_order,s.country_code||s.country,s.postcode,fmt(s.required_from),fmt(s.date_completed)]){const td=document.createElement("td");td.textContent=x??"—";tr.appendChild(td);}tb.appendChild(tr);}t.appendChild(tb);block.appendChild(t);jobs.appendChild(block);}details.showModal();}
 async function saveState(){if(!currentOperation)return;const response=await fetch("/operations/"+currentOperation.operation_id+"/presentation-state",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({collected:document.getElementById("state-collected").checked,complete:document.getElementById("state-complete").checked,hidden:document.getElementById("state-hidden").checked})});const data=await response.json();if(!response.ok||!data.ok){alert(data.error||"Could not save operation state");return;}window.location.reload();}

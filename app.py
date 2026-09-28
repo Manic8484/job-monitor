@@ -1,6 +1,6 @@
-
 import os
 import re
+import html
 from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
@@ -394,6 +394,353 @@ def job_monitor_email():
         "allocated": bool((parsed.get("agent_callsign") or "").strip()),
     })
 
+
+
+
+def parse_freedom_snapshot(body):
+    """Parse the V4 Freedom mirror feed.
+
+    Accepts either the plain-text body produced by the mailbox automation or
+    the original HTML template body containing <br> line breaks.
+    """
+    value = html.unescape(body or "")
+    value = re.sub(r"(?i)<br\s*/?>", "\n", value)
+    value = re.sub(r"(?i)</p\s*>", "\n", value)
+    value = re.sub(r"<[^>]+>", "", value)
+    lines = [line.strip() for line in value.replace("\r", "").split("\n")]
+
+    result = {"stops": []}
+    current_stop = None
+    in_stops = False
+
+    job_map = {
+        "Job": "job_ref",
+        "Driver Callsign": "driver_callsign",
+        "Driver Firstname": "driver_firstname",
+        "Driver Lastname": "driver_lastname",
+        "Account Name": "account_name",
+        # Temporary aliases while V4 replaces earlier test templates.
+        "Account": "account_name",
+        "Account Code": "account_name",
+        "Agent Code": "agent_code",
+        "Agent Name": "agent_name",
+        "Vehicle": "vehicle_code",
+        "Vehicle Description": "vehicle_description",
+        "Cancelled": "cancelled",
+        "Booked": "booked",
+        "Goods": "goods",
+        "Special Instructions": "special_instructions",
+        "Despatch Instructions": "despatch_instructions",
+        "Status": "freedom_status",
+        "Job Flags": "job_flags",
+    }
+
+    stop_map = {
+        "Drop": "drop_order",
+        "Drop Type": "drop_type",
+        "Address Name": "address_name",
+        "Address Line 1": "address_line_1",
+        "Address Line 2": "address_line_2",
+        "Postcode": "postcode",
+        "Country": "country",
+        "Country Code": "country_code",
+        "Courntry Code": "country_code",
+        "Required From": "required_from",
+        "Required To": "required_to",
+        "Date Completed": "date_completed",
+        "Stop ID": "stop_id",
+    }
+
+    for line in lines:
+        if not line:
+            continue
+
+        if line == "---":
+            if current_stop:
+                result["stops"].append(current_stop)
+                current_stop = None
+            in_stops = True
+            continue
+
+        if ":" not in line:
+            continue
+
+        key, raw = line.split(":", 1)
+        key = key.strip()
+        raw = raw.strip()
+
+        if in_stops and key in stop_map:
+            if current_stop is None:
+                current_stop = {}
+            current_stop[stop_map[key]] = raw
+        elif key in job_map:
+            result[job_map[key]] = raw
+
+    if current_stop:
+        result["stops"].append(current_stop)
+
+    result["cancelled_at"] = parse_dt(result.get("cancelled"))
+    result["booked_at"] = parse_dt(result.get("booked"))
+
+    flags = (result.get("job_flags") or "").strip()
+    result["job_flags"] = flags or None
+
+    for stop in result["stops"]:
+        try:
+            stop["drop_order"] = int(stop.get("drop_order") or 0)
+        except (TypeError, ValueError):
+            stop["drop_order"] = 0
+        stop["required_from_dt"] = parse_dt(stop.get("required_from"))
+        stop["required_to_dt"] = parse_dt(stop.get("required_to"))
+        stop["date_completed_dt"] = parse_dt(stop.get("date_completed"))
+
+    return result
+
+
+@app.post("/freedom-email")
+def freedom_email():
+    if INGEST_TOKEN and request.headers.get("X-Ingest-Token") != INGEST_TOKEN:
+        return jsonify({"ok": False, "error": "unauthorized"}), 401
+
+    payload = request.get_json(silent=True) or {}
+    message_id = payload.get("message_id")
+    received_at_raw = payload.get("received_at")
+    source_event = payload.get("source_event") or "FREEDOM_MIRROR"
+    body = payload.get("body") or ""
+
+    if not body.strip():
+        return jsonify({"ok": False, "error": "body is required"}), 400
+
+    received_at = datetime.now(LONDON)
+    if received_at_raw:
+        try:
+            received_at = datetime.fromisoformat(received_at_raw.replace("Z", "+00:00"))
+        except ValueError:
+            return jsonify({"ok": False, "error": "invalid received_at"}), 400
+
+    parsed = parse_freedom_snapshot(body)
+    job_ref = (parsed.get("job_ref") or "").strip()
+    if not job_ref:
+        return jsonify({"ok": False, "error": "Could not parse Job"}), 400
+
+    if not parsed["stops"]:
+        return jsonify({"ok": False, "error": "No stops parsed; snapshot not applied"}), 400
+
+    invalid_stops = [s for s in parsed["stops"] if not (s.get("stop_id") or "").strip()]
+    if invalid_stops:
+        return jsonify({"ok": False, "error": "One or more stops have no Stop ID"}), 400
+
+    with db_connect(row_factory=dict_row) as conn:
+        with conn.cursor() as cur:
+            if message_id:
+                cur.execute(
+                    "SELECT id FROM public.freedom_events WHERE message_id = %s",
+                    (message_id,),
+                )
+                duplicate = cur.fetchone()
+                if duplicate:
+                    return jsonify({
+                        "ok": True,
+                        "duplicate": True,
+                        "event_id": duplicate["id"],
+                        "job_ref": job_ref,
+                    })
+
+            cur.execute(
+                "SELECT last_received_at FROM public.freedom_jobs WHERE job_ref = %s",
+                (job_ref,),
+            )
+            existing = cur.fetchone()
+
+            if (
+                existing
+                and existing["last_received_at"]
+                and received_at
+                and received_at < existing["last_received_at"]
+            ):
+                cur.execute(
+                    """
+                    INSERT INTO public.freedom_events
+                        (message_id, source_event, job_ref, raw_payload,
+                         processing_status, processing_detail, received_at)
+                    VALUES (%s,%s,%s,%s,'STALE','Older snapshot ignored',%s)
+                    RETURNING id
+                    """,
+                    (message_id, source_event, job_ref, body, received_at),
+                )
+                event_id = cur.fetchone()["id"]
+                conn.commit()
+                return jsonify({
+                    "ok": True,
+                    "stale": True,
+                    "event_id": event_id,
+                    "job_ref": job_ref,
+                })
+
+            cur.execute(
+                """
+                INSERT INTO public.freedom_jobs (
+                    job_ref,
+                    driver_callsign, driver_firstname, driver_lastname,
+                    account_name, agent_code, agent_name,
+                    vehicle_code, vehicle_description,
+                    cancelled_at, booked_at,
+                    goods, special_instructions, despatch_instructions,
+                    freedom_status, job_flags,
+                    last_source_event, last_message_id, last_received_at,
+                    updated_at
+                )
+                VALUES (
+                    %(job_ref)s,
+                    %(driver_callsign)s, %(driver_firstname)s, %(driver_lastname)s,
+                    %(account_name)s, %(agent_code)s, %(agent_name)s,
+                    %(vehicle_code)s, %(vehicle_description)s,
+                    %(cancelled_at)s, %(booked_at)s,
+                    %(goods)s, %(special_instructions)s, %(despatch_instructions)s,
+                    %(freedom_status)s, %(job_flags)s,
+                    %(last_source_event)s, %(last_message_id)s, %(last_received_at)s,
+                    now()
+                )
+                ON CONFLICT (job_ref) DO UPDATE SET
+                    driver_callsign = EXCLUDED.driver_callsign,
+                    driver_firstname = EXCLUDED.driver_firstname,
+                    driver_lastname = EXCLUDED.driver_lastname,
+                    account_name = EXCLUDED.account_name,
+                    agent_code = EXCLUDED.agent_code,
+                    agent_name = EXCLUDED.agent_name,
+                    vehicle_code = EXCLUDED.vehicle_code,
+                    vehicle_description = EXCLUDED.vehicle_description,
+                    cancelled_at = EXCLUDED.cancelled_at,
+                    booked_at = EXCLUDED.booked_at,
+                    goods = EXCLUDED.goods,
+                    special_instructions = EXCLUDED.special_instructions,
+                    despatch_instructions = EXCLUDED.despatch_instructions,
+                    freedom_status = EXCLUDED.freedom_status,
+                    job_flags = EXCLUDED.job_flags,
+                    last_source_event = EXCLUDED.last_source_event,
+                    last_message_id = EXCLUDED.last_message_id,
+                    last_received_at = EXCLUDED.last_received_at,
+                    updated_at = now()
+                """,
+                {
+                    "job_ref": job_ref,
+                    "driver_callsign": parsed.get("driver_callsign") or None,
+                    "driver_firstname": parsed.get("driver_firstname") or None,
+                    "driver_lastname": parsed.get("driver_lastname") or None,
+                    "account_name": parsed.get("account_name") or None,
+                    "agent_code": parsed.get("agent_code") or None,
+                    "agent_name": parsed.get("agent_name") or None,
+                    "vehicle_code": parsed.get("vehicle_code") or None,
+                    "vehicle_description": parsed.get("vehicle_description") or None,
+                    "cancelled_at": parsed.get("cancelled_at"),
+                    "booked_at": parsed.get("booked_at"),
+                    "goods": parsed.get("goods") or None,
+                    "special_instructions": parsed.get("special_instructions") or None,
+                    "despatch_instructions": parsed.get("despatch_instructions") or None,
+                    "freedom_status": parsed.get("freedom_status") or None,
+                    "job_flags": parsed.get("job_flags"),
+                    "last_source_event": source_event,
+                    "last_message_id": message_id,
+                    "last_received_at": received_at,
+                },
+            )
+
+            seen_stop_ids = []
+            for stop in parsed["stops"]:
+                stop_id = stop["stop_id"].strip()
+                seen_stop_ids.append(stop_id)
+                cur.execute(
+                    """
+                    INSERT INTO public.freedom_stops (
+                        stop_id, job_ref, drop_order, drop_type,
+                        address_name, address_line_1, address_line_2,
+                        postcode, country, country_code,
+                        required_from, required_to, date_completed,
+                        last_seen_at, updated_at
+                    )
+                    VALUES (
+                        %(stop_id)s, %(job_ref)s, %(drop_order)s, %(drop_type)s,
+                        %(address_name)s, %(address_line_1)s, %(address_line_2)s,
+                        %(postcode)s, %(country)s, %(country_code)s,
+                        %(required_from)s, %(required_to)s, %(date_completed)s,
+                        %(last_seen_at)s, now()
+                    )
+                    ON CONFLICT (stop_id) DO UPDATE SET
+                        job_ref = EXCLUDED.job_ref,
+                        drop_order = EXCLUDED.drop_order,
+                        drop_type = EXCLUDED.drop_type,
+                        address_name = EXCLUDED.address_name,
+                        address_line_1 = EXCLUDED.address_line_1,
+                        address_line_2 = EXCLUDED.address_line_2,
+                        postcode = EXCLUDED.postcode,
+                        country = EXCLUDED.country,
+                        country_code = EXCLUDED.country_code,
+                        required_from = EXCLUDED.required_from,
+                        required_to = EXCLUDED.required_to,
+                        date_completed = EXCLUDED.date_completed,
+                        last_seen_at = EXCLUDED.last_seen_at,
+                        updated_at = now()
+                    """,
+                    {
+                        "stop_id": stop_id,
+                        "job_ref": job_ref,
+                        "drop_order": stop.get("drop_order") or 0,
+                        "drop_type": stop.get("drop_type") or None,
+                        "address_name": stop.get("address_name") or None,
+                        "address_line_1": stop.get("address_line_1") or None,
+                        "address_line_2": stop.get("address_line_2") or None,
+                        "postcode": stop.get("postcode") or None,
+                        "country": stop.get("country") or None,
+                        "country_code": stop.get("country_code") or None,
+                        "required_from": stop.get("required_from_dt"),
+                        "required_to": stop.get("required_to_dt"),
+                        "date_completed": stop.get("date_completed_dt"),
+                        "last_seen_at": received_at,
+                    },
+                )
+
+            # V4 is a full job snapshot, so a stop absent from the newest snapshot
+            # is no longer part of the current Freedom job.
+            cur.execute(
+                """
+                DELETE FROM public.freedom_stops
+                WHERE job_ref = %s
+                  AND NOT (stop_id = ANY(%s))
+                """,
+                (job_ref, seen_stop_ids),
+            )
+            removed_stops = cur.rowcount
+
+            cur.execute(
+                """
+                INSERT INTO public.freedom_events (
+                    message_id, source_event, job_ref, raw_payload,
+                    processing_status, processing_detail, received_at
+                )
+                VALUES (%s,%s,%s,%s,'PROCESSED',%s,%s)
+                RETURNING id
+                """,
+                (
+                    message_id,
+                    source_event,
+                    job_ref,
+                    body,
+                    f"{len(seen_stop_ids)} stop(s) mirrored; {removed_stops} removed",
+                    received_at,
+                ),
+            )
+            event_id = cur.fetchone()["id"]
+            conn.commit()
+
+    return jsonify({
+        "ok": True,
+        "job_ref": job_ref,
+        "event_id": event_id,
+        "stops_mirrored": len(seen_stop_ids),
+        "stops_removed": removed_stops,
+        "special_job": bool(parsed.get("job_flags") and parsed["job_flags"][1:2] == "1"),
+        "priority_job": bool(parsed.get("job_flags") and parsed["job_flags"][10:11] == "1"),
+    })
 
 
 @app.post("/operations/<int:operation_id>/presentation-state")

@@ -9,8 +9,9 @@ h1{margin:0;font-size:21px}.controls{display:flex;gap:6px;align-items:center}.co
 .wrap{padding:14px}.legend{display:flex;gap:14px;margin-bottom:9px;font-size:12px}.sw{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:5px;vertical-align:-2px}
 .board-row{display:grid;grid-template-columns:220px 1fr;gap:12px}.board-row.planning-only{grid-template-columns:1fr}
 .active-column{background:#fff;border:1px solid #d8dee8;border-radius:9px;padding:9px;min-height:500px}.active-title{font-size:13px;font-weight:bold;margin-bottom:8px}.active-stack{display:flex;flex-direction:column;gap:8px}
-.timeline{position:relative;height:500px;background:#fff;border:1px solid #d8dee8;border-radius:9px;overflow:clip}
-.timeline-ruler{position:sticky;top:0;height:24px;background:#fff;border-bottom:1px solid #e8edf3;z-index:20}
+.timeline-wrap{position:relative;min-width:0}
+.timeline-ruler{position:sticky;top:0;height:24px;background:#fff;border:1px solid #d8dee8;border-bottom:1px solid #e8edf3;border-radius:9px 9px 0 0;z-index:20}
+.timeline{position:relative;height:500px;background:#fff;border:1px solid #d8dee8;border-top:0;border-radius:0 0 9px 9px;overflow:hidden}
 .grid{position:absolute;top:0;bottom:0;border-left:1px solid #e0e5ec}.tick{position:absolute;top:6px;transform:translateX(-50%);font-size:10px;color:#475467;white-space:nowrap}
 .op-line{position:absolute;height:4px;border-radius:3px;background:#93a4b8;z-index:1}.marker{position:absolute;width:12px;height:12px;border-radius:50%;background:#111827;border:2px solid #fff;box-shadow:0 0 0 1px #111827;transform:translate(-50%,-50%);z-index:3}
 .marker-label{position:absolute;transform:translate(-50%,-145%);white-space:nowrap;font-size:10px;font-weight:bold;background:#fff;padding:2px 4px;border-radius:4px;box-shadow:0 1px 2px rgba(0,0,0,.12);z-index:4}
@@ -37,9 +38,10 @@ table{width:100%;border-collapse:collapse;margin-top:9px;font-size:12px}th,td{pa
 {% else %}<div style="font-size:12px;color:#667085">No active monitored jobs.</div>{% endfor %}
 </div></aside>
 {% endif %}
+<div class="timeline-wrap">
+<div class="timeline-ruler">{% for t in ticks %}<div class="tick" style="left:{{ t.left_pct }}%">{{ t.label }}</div>{% endfor %}</div>
 <div class="timeline">
 {% for t in ticks %}<div class="grid" style="left:{{ t.left_pct }}%"></div>{% endfor %}
-<div class="timeline-ruler">{% for t in ticks %}<div class="tick" style="left:{{ t.left_pct }}%">{{ t.label }}</div>{% endfor %}</div>
 {% for op in timeline_operations %}
 {% set top = 62 + op.lane*76 %}
 {% if op.markers %}
@@ -48,7 +50,7 @@ table{width:100%;border-collapse:collapse;margin-top:9px;font-size:12px}th,td{pa
 {% endif %}
 <div class="card {{ op.status_class }}" style="left:{{ op.left_pct }}%;width:{{ op.width_pct }}%;top:{{ top }}px" onclick='openDetails({{ op|tojson }})'><strong>{{ op.primary_account }}</strong><span class="sub">{{ op.job_count }} docket{% if op.job_count != 1 %}s{% endif %}{% if op.vehicles %} · {{ op.vehicles|join(", ") }}{% endif %}</span><span class="tiny">{{ op.status }}</span></div>
 {% endfor %}
-</div></div>
+</div></div></div>
 <div class="lookahead"><div class="lookahead-title">Next 10 days</div><div class="lookahead-days">
 {% for d in lookahead_days %}<a class="day-box {% if d.count > 0 %}has-movements{% endif %} {% if d.selected %}selected{% endif %} {% if d.today %}today{% endif %}" href="/board?date={{ d.date.isoformat() }}"><div class="day-name">{{ d.date.strftime('%a') }}</div><div class="day-date">{{ d.date.strftime('%d %b') }}</div><div class="day-count">{% if d.count > 0 %}{{ d.count }} operation{% if d.count != 1 %}s{% endif %}{% else %}No operations{% endif %}</div></a>{% endfor %}
 </div></div></div>

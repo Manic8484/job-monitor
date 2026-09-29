@@ -1,12 +1,19 @@
+
 import os
 import re
 import html
+import base64
+import hashlib
+import mimetypes
+import uuid
 from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 import psycopg
 from psycopg.rows import dict_row
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, jsonify, render_template, request, Response
+
+from google.cloud import storage
 
 app = Flask(__name__)
 
@@ -17,6 +24,8 @@ DB_USER = os.getenv("DB_USER", "job_monitor_api")
 DB_PASSWORD = os.getenv("DB_PASSWORD")
 INSTANCE_CONNECTION_NAME = os.getenv("INSTANCE_CONNECTION_NAME")
 INGEST_TOKEN = os.getenv("JOB_MONITOR_INGEST_TOKEN")
+JOB_MEDIA_BUCKET = os.getenv("JOB_MEDIA_BUCKET", "warehouse-media")
+JOB_MEDIA_MAX_BYTES = int(os.getenv("JOB_MEDIA_MAX_BYTES", str(20 * 1024 * 1024)))
 
 def db_connect(row_factory=None):
     database_url = os.getenv("DATABASE_URL")
@@ -887,6 +896,270 @@ def job_note():
     })
 
 
+
+def _safe_filename(value):
+    name = os.path.basename((value or "attachment").strip()) or "attachment"
+    name = re.sub(r"[^A-Za-z0-9._ -]+", "_", name).strip(" .")
+    return name[:180] or "attachment"
+
+
+def _decode_base64_content(value):
+    raw = str(value or "").strip()
+    if not raw:
+        raise ValueError("content_base64 is required")
+    if raw.startswith("data:") and "," in raw:
+        raw = raw.split(",", 1)[1]
+    try:
+        data = base64.b64decode(raw, validate=True)
+    except Exception as exc:
+        raise ValueError("invalid base64 attachment content") from exc
+    if not data:
+        raise ValueError("attachment is empty")
+    if len(data) > JOB_MEDIA_MAX_BYTES:
+        raise ValueError(f"attachment exceeds {JOB_MEDIA_MAX_BYTES} byte limit")
+    return data
+
+
+def _storage_bucket():
+    if not JOB_MEDIA_BUCKET:
+        raise RuntimeError("JOB_MEDIA_BUCKET is not configured")
+    return storage.Client().bucket(JOB_MEDIA_BUCKET)
+
+
+def _insert_job_media(cur, *, job_ref, source, content_bytes, filename=None,
+                      content_type=None, source_message_id=None, source_media_id=None,
+                      sender=None, caption=None, received_at=None):
+    """Store one media object in Cloud Storage and its generic job metadata row.
+
+    Returns (media_id, duplicate). Retries are deduplicated by source_media_id when
+    available, otherwise by source_message_id + content SHA256.
+    """
+    source = (source or "").strip().upper()
+    if not source:
+        raise ValueError("source is required")
+    filename = _safe_filename(filename)
+    content_type = (content_type or mimetypes.guess_type(filename)[0] or "application/octet-stream").strip()
+    digest = hashlib.sha256(content_bytes).hexdigest()
+
+    if source_media_id:
+        cur.execute(
+            """
+            SELECT id FROM public.job_media
+            WHERE source = %s AND source_media_id = %s
+            """,
+            (source, str(source_media_id)),
+        )
+        row = cur.fetchone()
+        if row:
+            return row["id"], True
+
+    if source_message_id:
+        cur.execute(
+            """
+            SELECT id FROM public.job_media
+            WHERE source = %s AND source_message_id = %s AND content_sha256 = %s
+            """,
+            (source, str(source_message_id), digest),
+        )
+        row = cur.fetchone()
+        if row:
+            return row["id"], True
+
+    object_name = f"jobs/{job_ref}/{source.lower()}/{uuid.uuid4().hex}_{filename}"
+    bucket = _storage_bucket()
+    blob = bucket.blob(object_name)
+    blob.upload_from_string(content_bytes, content_type=content_type)
+
+    cur.execute(
+        """
+        INSERT INTO public.job_media (
+            job_ref, source, source_message_id, source_media_id,
+            sender, caption, original_filename, content_type, byte_size,
+            content_sha256, storage_bucket, storage_object, received_at
+        )
+        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+        RETURNING id
+        """,
+        (
+            job_ref, source, source_message_id, source_media_id,
+            sender, caption, filename, content_type, len(content_bytes),
+            digest, JOB_MEDIA_BUCKET, object_name, received_at,
+        ),
+    )
+    return cur.fetchone()["id"], False
+
+
+def _parse_received_at(value):
+    if not value:
+        return datetime.now(LONDON)
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise ValueError("invalid received_at") from exc
+
+
+@app.post("/job-media")
+def job_media_upload():
+    """Generic media ingestion for an existing Freedom job.
+
+    JSON payload uses base64 file content. Suitable for Power Automate, OpsBot and
+    other trusted internal integrations.
+    """
+    if INGEST_TOKEN and request.headers.get("X-Ingest-Token") != INGEST_TOKEN:
+        return jsonify({"ok": False, "error": "unauthorized"}), 401
+
+    payload = request.get_json(silent=True) or {}
+    job_ref = str(payload.get("job_ref") or "").strip()
+    source = str(payload.get("source") or "MANUAL").strip().upper()
+    source_message_id = payload.get("source_message_id") or payload.get("message_id")
+    source_media_id = payload.get("source_media_id") or payload.get("attachment_id") or payload.get("media_id")
+    sender = (payload.get("sender") or payload.get("from") or "").strip() or None
+    caption = payload.get("caption") or None
+    filename = payload.get("filename") or payload.get("name") or "attachment"
+    content_type = payload.get("content_type") or payload.get("mime_type")
+
+    if not job_ref:
+        return jsonify({"ok": False, "error": "job_ref is required"}), 400
+
+    try:
+        received_at = _parse_received_at(payload.get("received_at"))
+        content_bytes = _decode_base64_content(payload.get("content_base64") or payload.get("content"))
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+
+    with db_connect(row_factory=dict_row) as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT job_ref FROM public.freedom_jobs WHERE job_ref = %s", (job_ref,))
+            if not cur.fetchone():
+                return jsonify({"ok": False, "error": "Freedom job not found", "job_ref": job_ref}), 404
+            try:
+                media_id, duplicate = _insert_job_media(
+                    cur, job_ref=job_ref, source=source, content_bytes=content_bytes,
+                    filename=filename, content_type=content_type,
+                    source_message_id=source_message_id, source_media_id=source_media_id,
+                    sender=sender, caption=caption, received_at=received_at,
+                )
+            except (ValueError, RuntimeError) as exc:
+                return jsonify({"ok": False, "error": str(exc)}), 400
+            if not duplicate:
+                conn.commit()
+
+    return jsonify({
+        "ok": True, "duplicate": duplicate, "job_ref": job_ref,
+        "media_id": media_id, "source": source,
+    })
+
+
+@app.post("/job-whatsapp")
+def job_whatsapp():
+    """Normalised OpsBot handoff: one WhatsApp message plus zero or more media files."""
+    if INGEST_TOKEN and request.headers.get("X-Ingest-Token") != INGEST_TOKEN:
+        return jsonify({"ok": False, "error": "unauthorized"}), 401
+
+    payload = request.get_json(silent=True) or {}
+    job_ref = str(payload.get("job_ref") or "").strip()
+    message_id = payload.get("message_id") or payload.get("source_message_id")
+    sender = (payload.get("sender") or payload.get("from") or "").strip() or None
+    note_text = str(payload.get("note_text") or payload.get("text") or "").strip()
+    media_items = payload.get("media") or []
+
+    if not job_ref:
+        return jsonify({"ok": False, "error": "job_ref is required"}), 400
+    if not note_text and not media_items:
+        return jsonify({"ok": False, "error": "text or media is required"}), 400
+    if not isinstance(media_items, list):
+        return jsonify({"ok": False, "error": "media must be an array"}), 400
+
+    try:
+        received_at = _parse_received_at(payload.get("received_at"))
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+
+    with db_connect(row_factory=dict_row) as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT job_ref FROM public.freedom_jobs WHERE job_ref = %s", (job_ref,))
+            if not cur.fetchone():
+                return jsonify({"ok": False, "error": "Freedom job not found", "job_ref": job_ref}), 404
+
+            note_id = None
+            note_duplicate = False
+            if note_text:
+                note_id, note_duplicate = _insert_job_note(
+                    cur, job_ref=job_ref, source="WHATSAPP",
+                    source_message_id=message_id, sender=sender,
+                    note_text=note_text, raw_body=payload.get("raw_body") or note_text,
+                    received_at=received_at,
+                )
+
+            media_results = []
+            for item in media_items:
+                if not isinstance(item, dict):
+                    return jsonify({"ok": False, "error": "each media item must be an object"}), 400
+                try:
+                    content_bytes = _decode_base64_content(item.get("content_base64") or item.get("content"))
+                    media_id, duplicate = _insert_job_media(
+                        cur, job_ref=job_ref, source="WHATSAPP", content_bytes=content_bytes,
+                        filename=item.get("filename") or item.get("name") or "whatsapp-media",
+                        content_type=item.get("content_type") or item.get("mime_type"),
+                        source_message_id=message_id,
+                        source_media_id=item.get("media_id") or item.get("source_media_id"),
+                        sender=sender, caption=item.get("caption"), received_at=received_at,
+                    )
+                except (ValueError, RuntimeError) as exc:
+                    return jsonify({"ok": False, "error": str(exc)}), 400
+                media_results.append({"media_id": media_id, "duplicate": duplicate})
+
+            conn.commit()
+
+    return jsonify({
+        "ok": True, "job_ref": job_ref,
+        "note_id": note_id, "note_duplicate": note_duplicate,
+        "media": media_results,
+    })
+
+
+@app.get("/job/<job_ref>/media")
+def job_media_list(job_ref):
+    with db_connect(row_factory=dict_row) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT id, job_ref, source, source_message_id, source_media_id,
+                       sender, caption, original_filename, content_type, byte_size,
+                       received_at, created_at
+                FROM public.job_media
+                WHERE job_ref = %s
+                ORDER BY COALESCE(received_at, created_at), id
+                """,
+                (job_ref,),
+            )
+            rows = [dict(r) for r in cur.fetchall()]
+    for row in rows:
+        row["url"] = f"/job-media/{row['id']}"
+    return jsonify({"ok": True, "job_ref": job_ref, "count": len(rows), "media": rows})
+
+
+@app.get("/job-media/<int:media_id>")
+def job_media_download(media_id):
+    with db_connect(row_factory=dict_row) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT storage_bucket, storage_object, original_filename, content_type
+                FROM public.job_media WHERE id = %s
+                """,
+                (media_id,),
+            )
+            row = cur.fetchone()
+            if not row:
+                return jsonify({"ok": False, "error": "media not found"}), 404
+
+    bucket = storage.Client().bucket(row["storage_bucket"])
+    data = bucket.blob(row["storage_object"]).download_as_bytes()
+    headers = {"Content-Disposition": f'inline; filename="{_safe_filename(row["original_filename"])}"'}
+    return Response(data, mimetype=row["content_type"] or "application/octet-stream", headers=headers)
+
+
 @app.post("/warehouse-task-email")
 def warehouse_task_email():
     if INGEST_TOKEN and request.headers.get("X-Ingest-Token") != INGEST_TOKEN:
@@ -939,22 +1212,38 @@ def warehouse_task_email():
                 raw_body=body,
                 received_at=received_at,
             )
-            if not duplicate:
-                conn.commit()
-            else:
-                return jsonify({
-                    "ok": True,
-                    "duplicate": True,
-                    "note_id": note_id,
-                    "job_ref": job_ref,
-                })
+
+            attachment_results = []
+            attachments = payload.get("attachments") or []
+            if not isinstance(attachments, list):
+                return jsonify({"ok": False, "error": "attachments must be an array"}), 400
+            for item in attachments:
+                if not isinstance(item, dict):
+                    return jsonify({"ok": False, "error": "each attachment must be an object"}), 400
+                try:
+                    content_bytes = _decode_base64_content(item.get("content_base64") or item.get("content"))
+                    media_id, media_duplicate = _insert_job_media(
+                        cur, job_ref=job_ref, source="EMAIL", content_bytes=content_bytes,
+                        filename=item.get("filename") or item.get("name") or "attachment",
+                        content_type=item.get("content_type") or item.get("mime_type"),
+                        source_message_id=message_id,
+                        source_media_id=item.get("attachment_id") or item.get("source_media_id"),
+                        sender=sender, caption=item.get("caption"), received_at=received_at,
+                    )
+                except (ValueError, RuntimeError) as exc:
+                    return jsonify({"ok": False, "error": str(exc)}), 400
+                attachment_results.append({"media_id": media_id, "duplicate": media_duplicate})
+
+            conn.commit()
 
     return jsonify({
         "ok": True,
+        "duplicate": duplicate,
         "job_ref": job_ref,
         "note_id": note_id,
         "source": "EMAIL",
         "instruction_chars": len(instruction),
+        "attachments": attachment_results,
     })
 
 @app.post("/operations/<int:operation_id>/presentation-state")

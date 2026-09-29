@@ -743,6 +743,220 @@ def freedom_email():
     })
 
 
+
+def _plain_email_body(body):
+    """Convert a mailbox body to readable plain text while retaining line breaks."""
+    value = html.unescape(body or "")
+    value = re.sub(r"(?i)<br\s*/?>", "\n", value)
+    value = re.sub(r"(?i)</p\s*>", "\n", value)
+    value = re.sub(r"(?i)<p(?:\s+[^>]*)?>", "", value)
+    value = re.sub(r"<[^>]+>", "", value)
+    value = value.replace("\r", "")
+    lines = [line.rstrip() for line in value.split("\n")]
+    # Collapse excessive blank lines without flattening intentional paragraphs.
+    out = []
+    blank = False
+    for line in lines:
+        is_blank = not line.strip()
+        if is_blank and blank:
+            continue
+        out.append(line)
+        blank = is_blank
+    return "\n".join(out).strip()
+
+
+def _clean_task_reply_body(body):
+    """Keep the new reply text and discard the quoted previous message where possible."""
+    text = _plain_email_body(body)
+    lines = text.split("\n")
+    kept = []
+    for line in lines:
+        stripped = line.strip()
+        if re.match(r"^-{2,}\s*Original Message\s*-{2,}$", stripped, re.I):
+            break
+        if re.match(r"^From:\s+", stripped, re.I):
+            # Outlook-style quoted message header. Only treat as a cut point once
+            # we already have some reply content.
+            if any(x.strip() for x in kept):
+                break
+        kept.append(line)
+    return "\n".join(kept).strip()
+
+
+def _warehouse_task_ref_from_subject(subject):
+    match = re.search(r"\bWarehouse\s+Tasking\s+(\d+)\b", subject or "", re.I)
+    return match.group(1) if match else None
+
+
+def _insert_job_note(cur, *, job_ref, source, source_message_id=None, sender=None, subject=None, note_text=None, raw_body=None, received_at=None):
+    """Insert one source-neutral note against an existing Freedom job.
+
+    Returns (note_id, duplicate). The unique source/message key makes mailbox or
+    WhatsApp retries idempotent.
+    """
+    source = (source or "").strip().upper()
+    if not source:
+        raise ValueError("source is required")
+    note_text = (note_text or "").strip()
+    if not note_text:
+        raise ValueError("note_text is required")
+
+    if source_message_id:
+        cur.execute(
+            """
+            SELECT id
+            FROM public.job_notes
+            WHERE source = %s AND source_message_id = %s
+            """,
+            (source, source_message_id),
+        )
+        duplicate = cur.fetchone()
+        if duplicate:
+            return duplicate["id"], True
+
+    cur.execute(
+        """
+        INSERT INTO public.job_notes (
+            job_ref, source, source_message_id, sender, subject,
+            note_text, raw_body, received_at
+        )
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+        RETURNING id
+        """,
+        (job_ref, source, source_message_id, sender, subject, note_text, raw_body, received_at),
+    )
+    return cur.fetchone()["id"], False
+
+
+@app.post("/job-note")
+def job_note():
+    """Generic note ingestion for any mirrored Freedom job.
+
+    Intended for trusted integrations such as WhatsApp, manual tooling or future
+    mailbox flows where the job reference is already known.
+    """
+    if INGEST_TOKEN and request.headers.get("X-Ingest-Token") != INGEST_TOKEN:
+        return jsonify({"ok": False, "error": "unauthorized"}), 401
+
+    payload = request.get_json(silent=True) or {}
+    job_ref = str(payload.get("job_ref") or "").strip()
+    source = str(payload.get("source") or "MANUAL").strip().upper()
+    source_message_id = payload.get("source_message_id") or payload.get("message_id")
+    sender = (payload.get("sender") or payload.get("from") or "").strip() or None
+    subject = (payload.get("subject") or "").strip() or None
+    note_text = payload.get("note_text") or payload.get("body") or ""
+    raw_body = payload.get("raw_body") or payload.get("body")
+    received_at_raw = payload.get("received_at")
+
+    if not job_ref:
+        return jsonify({"ok": False, "error": "job_ref is required"}), 400
+    if not str(note_text).strip():
+        return jsonify({"ok": False, "error": "note_text is required"}), 400
+
+    received_at = datetime.now(LONDON)
+    if received_at_raw:
+        try:
+            received_at = datetime.fromisoformat(str(received_at_raw).replace("Z", "+00:00"))
+        except ValueError:
+            return jsonify({"ok": False, "error": "invalid received_at"}), 400
+
+    with db_connect(row_factory=dict_row) as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT job_ref FROM public.freedom_jobs WHERE job_ref = %s", (job_ref,))
+            if not cur.fetchone():
+                return jsonify({"ok": False, "error": "Freedom job not found", "job_ref": job_ref}), 404
+
+            try:
+                note_id, duplicate = _insert_job_note(
+                    cur, job_ref=job_ref, source=source,
+                    source_message_id=source_message_id, sender=sender, subject=subject,
+                    note_text=note_text, raw_body=raw_body, received_at=received_at,
+                )
+            except ValueError as exc:
+                return jsonify({"ok": False, "error": str(exc)}), 400
+
+            if not duplicate:
+                conn.commit()
+
+    return jsonify({
+        "ok": True,
+        "duplicate": duplicate,
+        "job_ref": job_ref,
+        "note_id": note_id,
+        "source": source,
+    })
+
+
+@app.post("/warehouse-task-email")
+def warehouse_task_email():
+    if INGEST_TOKEN and request.headers.get("X-Ingest-Token") != INGEST_TOKEN:
+        return jsonify({"ok": False, "error": "unauthorized"}), 401
+
+    payload = request.get_json(silent=True) or {}
+    message_id = payload.get("message_id")
+    subject = (payload.get("subject") or "").strip()
+    sender = (payload.get("sender") or payload.get("from") or "").strip() or None
+    body = payload.get("body") or ""
+    received_at_raw = payload.get("received_at")
+
+    job_ref = _warehouse_task_ref_from_subject(subject)
+    if not job_ref:
+        return jsonify({"ok": False, "error": "No Warehouse Tasking reference found in subject"}), 400
+
+    instruction = _clean_task_reply_body(body)
+    if not instruction:
+        return jsonify({"ok": False, "error": "No instruction text found in message body"}), 400
+
+    received_at = datetime.now(LONDON)
+    if received_at_raw:
+        try:
+            received_at = datetime.fromisoformat(received_at_raw.replace("Z", "+00:00"))
+        except ValueError:
+            return jsonify({"ok": False, "error": "invalid received_at"}), 400
+
+    with db_connect(row_factory=dict_row) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT job_ref, account_name, vehicle_description
+                FROM public.freedom_jobs
+                WHERE job_ref = %s
+                """,
+                (job_ref,),
+            )
+            job = cur.fetchone()
+            if not job:
+                return jsonify({"ok": False, "error": "Freedom job not found", "job_ref": job_ref}), 404
+
+            note_id, duplicate = _insert_job_note(
+                cur,
+                job_ref=job_ref,
+                source="EMAIL",
+                source_message_id=message_id,
+                sender=sender,
+                subject=subject,
+                note_text=instruction,
+                raw_body=body,
+                received_at=received_at,
+            )
+            if not duplicate:
+                conn.commit()
+            else:
+                return jsonify({
+                    "ok": True,
+                    "duplicate": True,
+                    "note_id": note_id,
+                    "job_ref": job_ref,
+                })
+
+    return jsonify({
+        "ok": True,
+        "job_ref": job_ref,
+        "note_id": note_id,
+        "source": "EMAIL",
+        "instruction_chars": len(instruction),
+    })
+
 @app.post("/operations/<int:operation_id>/presentation-state")
 def update_operation_presentation_state(operation_id):
     payload = request.get_json(silent=True) or {}

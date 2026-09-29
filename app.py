@@ -1277,20 +1277,138 @@ def warehouse_task_email():
 
 @app.get("/warehouse-tasks")
 def warehouse_tasks_board():
-    """Quick warehouse task stack driven from the Freedom mirror."""
+    """Warehouse management board: allocation columns plus today's completions."""
     with db_connect(row_factory=dict_row) as conn:
         with conn.cursor() as cur:
             cur.execute(
                 """
                 SELECT *
                 FROM public.v_warehouse_task_board
-                WHERE task_status <> 'COMPLETE'
-                  AND task_status <> 'CANCELLED'
-                ORDER BY priority_job DESC, booked_at ASC NULLS LAST, job_ref
+                WHERE task_status <> 'CANCELLED'
+                  AND (
+                        task_status <> 'COMPLETE'
+                        OR (completed_at AT TIME ZONE 'Europe/London')::date
+                           = (now() AT TIME ZONE 'Europe/London')::date
+                  )
+                ORDER BY
+                    CASE task_status
+                        WHEN 'UNALLOCATED' THEN 0
+                        WHEN 'IN_PROGRESS' THEN 1
+                        WHEN 'ALLOCATED' THEN 2
+                        WHEN 'COMPLETE' THEN 3
+                        ELSE 9
+                    END,
+                    priority_job DESC,
+                    queue_rank ASC NULLS LAST,
+                    booked_at ASC NULLS LAST,
+                    job_ref
                 """
             )
             tasks = [dict(r) for r in cur.fetchall()]
-    return render_template("warehouse_tasks.html", tasks=tasks)
+
+    unallocated = [t for t in tasks if t["task_status"] == "UNALLOCATED"]
+    allocated = [t for t in tasks if t["task_status"] != "UNALLOCATED"]
+
+    worker_map = {}
+    for t in allocated:
+        key = t.get("allocation_code") or t.get("driver_callsign") or "UNKNOWN"
+        label = t.get("driver_firstname") or t.get("allocation_name") or key
+        if key not in worker_map:
+            worker_map[key] = {"code": key, "label": label, "tasks": []}
+        worker_map[key]["tasks"].append(t)
+
+    workers = sorted(worker_map.values(), key=lambda w: (str(w["label"]).lower(), w["code"]))
+    return render_template(
+        "warehouse_tasks.html",
+        unallocated=unallocated,
+        workers=workers,
+        total_tasks=len(tasks),
+    )
+
+
+@app.get("/warehouse-tasks/<allocation_code>")
+def warehouse_operative_tasks(allocation_code):
+    """Simple operative queue. Completed work disappears immediately."""
+    with db_connect(row_factory=dict_row) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT *
+                FROM public.v_warehouse_task_board
+                WHERE task_status IN ('IN_PROGRESS', 'ALLOCATED')
+                  AND allocation_code = %s
+                ORDER BY
+                    CASE WHEN task_status = 'IN_PROGRESS' THEN 0 ELSE 1 END,
+                    started_at ASC NULLS LAST,
+                    priority_job DESC,
+                    queue_rank ASC NULLS LAST,
+                    booked_at ASC NULLS LAST,
+                    job_ref
+                """,
+                (allocation_code,),
+            )
+            tasks = [dict(r) for r in cur.fetchall()]
+
+    worker_name = None
+    if tasks:
+        worker_name = tasks[0].get("driver_firstname") or tasks[0].get("allocation_name")
+    return render_template(
+        "warehouse_operative_tasks.html",
+        tasks=tasks,
+        allocation_code=allocation_code,
+        worker_name=worker_name or allocation_code,
+    )
+
+
+@app.post("/api/warehouse-task-queue/reorder")
+def warehouse_task_queue_reorder():
+    """Persist management order for queued jobs within one allocation pile."""
+    payload = request.get_json(silent=True) or {}
+    allocation_code = str(payload.get("allocation_code") or "").strip()
+    job_refs = payload.get("job_refs") or []
+
+    if not allocation_code or not isinstance(job_refs, list):
+        return jsonify({"ok": False, "error": "allocation_code and job_refs are required"}), 400
+
+    job_refs = [str(x).strip() for x in job_refs if str(x).strip()]
+    if len(job_refs) != len(set(job_refs)):
+        return jsonify({"ok": False, "error": "duplicate job_ref in reorder request"}), 400
+
+    with db_connect(row_factory=dict_row) as conn:
+        with conn.cursor() as cur:
+            for rank, job_ref in enumerate(job_refs, start=1):
+                cur.execute(
+                    """
+                    SELECT job_ref
+                    FROM public.v_warehouse_task_board
+                    WHERE job_ref = %s
+                      AND allocation_code = %s
+                      AND task_status = 'ALLOCATED'
+                    """,
+                    (job_ref, allocation_code),
+                )
+                if not cur.fetchone():
+                    return jsonify({
+                        "ok": False,
+                        "error": f"{job_ref} is no longer a waiting job for {allocation_code}",
+                    }), 409
+
+                cur.execute(
+                    """
+                    INSERT INTO public.warehouse_queue_control
+                        (job_ref, allocation_code, queue_rank, updated_at, updated_by)
+                    VALUES (%s, %s, %s, now(), 'BOARD')
+                    ON CONFLICT (job_ref) DO UPDATE SET
+                        allocation_code = EXCLUDED.allocation_code,
+                        queue_rank = EXCLUDED.queue_rank,
+                        updated_at = now(),
+                        updated_by = 'BOARD'
+                    """,
+                    (job_ref, allocation_code, rank * 10),
+                )
+            conn.commit()
+
+    return jsonify({"ok": True, "allocation_code": allocation_code, "job_refs": job_refs})
 
 
 @app.get("/api/warehouse-task/<job_ref>")
@@ -1339,6 +1457,7 @@ def warehouse_task_detail(job_ref):
         "notes": notes,
         "media": media,
     })
+
 
 @app.post("/operations/<int:operation_id>/presentation-state")
 def update_operation_presentation_state(operation_id):

@@ -1246,6 +1246,72 @@ def warehouse_task_email():
         "attachments": attachment_results,
     })
 
+
+@app.get("/warehouse-tasks")
+def warehouse_tasks_board():
+    """Quick warehouse task stack driven from the Freedom mirror."""
+    with db_connect(row_factory=dict_row) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT *
+                FROM public.v_warehouse_task_board
+                WHERE task_status <> 'COMPLETE'
+                  AND task_status <> 'CANCELLED'
+                ORDER BY priority_job DESC, booked_at ASC NULLS LAST, job_ref
+                """
+            )
+            tasks = [dict(r) for r in cur.fetchall()]
+    return render_template("warehouse_tasks.html", tasks=tasks)
+
+
+@app.get("/api/warehouse-task/<job_ref>")
+def warehouse_task_detail(job_ref):
+    """Return one warehouse task plus all notes and media for the card modal."""
+    with db_connect(row_factory=dict_row) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT * FROM public.v_warehouse_task_board WHERE job_ref = %s",
+                (job_ref,),
+            )
+            task = cur.fetchone()
+            if not task:
+                return jsonify({"ok": False, "error": "warehouse task not found"}), 404
+
+            cur.execute(
+                """
+                SELECT id, source, source_message_id, sender, subject, note_text,
+                       received_at, created_at
+                FROM public.job_notes
+                WHERE job_ref = %s
+                ORDER BY COALESCE(received_at, created_at), id
+                """,
+                (job_ref,),
+            )
+            notes = [dict(r) for r in cur.fetchall()]
+
+            cur.execute(
+                """
+                SELECT id, source, source_message_id, source_media_id, sender, caption,
+                       original_filename, content_type, byte_size, received_at, created_at
+                FROM public.job_media
+                WHERE job_ref = %s
+                ORDER BY COALESCE(received_at, created_at), id
+                """,
+                (job_ref,),
+            )
+            media = [dict(r) for r in cur.fetchall()]
+
+    for item in media:
+        item["url"] = f"/job-media/{item['id']}"
+
+    return jsonify({
+        "ok": True,
+        "task": dict(task),
+        "notes": notes,
+        "media": media,
+    })
+
 @app.post("/operations/<int:operation_id>/presentation-state")
 def update_operation_presentation_state(operation_id):
     payload = request.get_json(silent=True) or {}

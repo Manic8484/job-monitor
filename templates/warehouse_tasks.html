@@ -1,0 +1,61 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Warehouse Tasks</title>
+<style>
+:root{--bg:#eef1f5;--ink:#17202a;--muted:#667085;--line:#d8dee8;--red:#dc2626;--amber:#f59e0b;--blue:#2563eb;--green:#16a34a}
+*{box-sizing:border-box}body{margin:0;font-family:Arial,sans-serif;background:var(--bg);color:var(--ink)}
+header{position:sticky;top:0;z-index:20;background:#fff;border-bottom:1px solid #ddd;padding:14px 18px;display:flex;justify-content:space-between;align-items:center}
+h1{margin:0;font-size:23px}.subhead{font-size:12px;color:var(--muted)}
+main{padding:16px;max-width:1500px;margin:auto}.stack{display:flex;flex-direction:column;gap:12px}
+.task{background:#fff;border:1px solid var(--line);border-radius:10px;box-shadow:0 2px 6px rgba(0,0,0,.08);padding:14px 16px;display:grid;grid-template-columns:80px 1fr auto;gap:14px;align-items:start;cursor:pointer}
+.task:hover{box-shadow:0 3px 10px rgba(0,0,0,.14)}.pos{font-size:34px;font-weight:800;text-align:center;color:#344054}.pos small{display:block;font-size:9px;text-transform:uppercase;color:var(--muted)}
+.task.priority{border-left:7px solid var(--red)}.task.normal{border-left:7px solid var(--blue)}
+.topline{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.ref{font-size:18px;font-weight:800}.service{font-size:11px;font-weight:700;background:#eef2f6;border-radius:12px;padding:3px 7px}.who{font-size:14px;font-weight:700;margin-top:5px}.headline{font-size:18px;margin-top:8px}.meta{display:flex;gap:12px;flex-wrap:wrap;font-size:11px;color:var(--muted);margin-top:9px}.badge{font-size:10px;font-weight:800;padding:4px 7px;border-radius:12px;background:#f2f4f7}.badge.red{background:#fee2e2;color:#991b1b}.counts{text-align:right;white-space:nowrap;font-size:12px;color:#475467}.counts strong{font-size:17px;color:#111827}.empty{background:#fff;border:1px solid var(--line);border-radius:10px;padding:30px;text-align:center;color:var(--muted)}
+dialog{border:0;border-radius:12px;width:min(1000px,94vw);padding:0;box-shadow:0 20px 60px rgba(0,0,0,.28)}dialog::backdrop{background:rgba(15,23,42,.48)}.mh{padding:14px 16px;border-bottom:1px solid #e5e7eb;display:flex;justify-content:space-between;align-items:center}.mh strong{font-size:20px}.close{font-size:25px;border:0;background:none;cursor:pointer}.mb{padding:16px}.summary{background:#f8fafc;border:1px solid #e2e8f0;border-radius:9px;padding:12px;margin-bottom:14px}.summary .headline{margin-top:5px}.section{margin-top:18px}.section h3{margin:0 0 8px;font-size:14px}.note{border-left:4px solid #94a3b8;background:#f8fafc;padding:9px 11px;margin-bottom:8px;border-radius:4px}.notehead{font-size:10px;font-weight:800;color:#64748b;margin-bottom:5px}.note pre{font:inherit;white-space:pre-wrap;margin:0}.media{display:flex;gap:10px;overflow-x:auto;padding-bottom:7px}.media-item{min-width:145px;max-width:180px}.media-item img{width:145px;height:120px;object-fit:cover;border-radius:7px;border:1px solid #ddd;display:block}.filebox{width:145px;height:120px;border:1px solid #ddd;border-radius:7px;display:flex;align-items:center;justify-content:center;background:#f8fafc;font-size:12px;text-align:center;padding:8px}.media-cap{font-size:9px;margin-top:4px;color:#64748b;overflow-wrap:anywhere}.loading{color:var(--muted)}
+@media(max-width:700px){.task{grid-template-columns:52px 1fr}.counts{grid-column:2;text-align:left}.pos{font-size:26px}.headline{font-size:15px}}
+</style>
+</head>
+<body>
+<header><div><h1>Warehouse Task Queue</h1><div class="subhead">Work from the top down · Priority jobs first</div></div><div class="subhead">{{ tasks|length }} open task{% if tasks|length != 1 %}s{% endif %}</div></header>
+<main>
+<div class="stack">
+{% for t in tasks %}
+<div class="task {% if t.priority_job %}priority{% else %}normal{% endif %}" onclick="openTask('{{ t.job_ref }}')">
+  <div class="pos"><small>Next</small>{{ loop.index }}</div>
+  <div>
+    <div class="topline"><span class="ref">Task {{ t.job_ref }}</span><span class="service">{{ t.vehicle_description or t.vehicle_code or 'Warehouse Task' }}</span>{% if t.priority_job %}<span class="badge red">PRIORITY</span>{% endif %}</div>
+    <div class="who">{% if t.allocation_name %}{{ t.allocation_code }} · {{ t.allocation_name }}{% else %}UNALLOCATED{% endif %}</div>
+    <div class="headline">{{ t.despatch_instructions or 'No short instruction supplied' }}</div>
+    <div class="meta"><span>Booked {{ t.booked_at.strftime('%d %b %H:%M') if t.booked_at else '—' }}</span><span>{{ t.completed_stop_count }}/{{ t.stop_count }} stops complete</span><span>{{ t.task_status }}</span></div>
+  </div>
+  <div class="counts"><div><strong>{{ t.note_count }}</strong> notes</div><div><strong>{{ t.image_count }}</strong> images</div>{% if t.media_count != t.image_count %}<div>{{ t.media_count - t.image_count }} files</div>{% endif %}</div>
+</div>
+{% else %}
+<div class="empty">No open warehouse tasks.</div>
+{% endfor %}
+</div>
+</main>
+<dialog id="taskDialog"><div class="mh"><strong id="modalTitle">Warehouse Task</strong><button class="close" onclick="taskDialog.close()">×</button></div><div class="mb" id="modalBody"><div class="loading">Loading…</div></div></dialog>
+<script>
+function fmtDate(v){if(!v)return '—';const d=new Date(v);return isNaN(d)?v:d.toLocaleString('en-GB',{hour12:false});}
+function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+async function openTask(ref){
+  modalTitle.textContent='Task '+ref;modalBody.innerHTML='<div class="loading">Loading…</div>';taskDialog.showModal();
+  const r=await fetch('/api/warehouse-task/'+encodeURIComponent(ref));const d=await r.json();
+  if(!r.ok||!d.ok){modalBody.textContent=d.error||'Could not load task';return;}
+  const t=d.task;
+  let h='<div class="summary"><div><b>'+esc(t.allocation_name?((t.allocation_code||'')+' · '+t.allocation_name):'UNALLOCATED')+'</b></div><div class="headline">'+esc(t.despatch_instructions||'No short instruction supplied')+'</div><div class="meta"><span>'+esc(t.vehicle_description||t.vehicle_code||'')+'</span><span>'+esc(t.task_status)+'</span><span>Booked '+esc(fmtDate(t.booked_at))+'</span></div></div>';
+  h+='<div class="section"><h3>Full notes ('+d.notes.length+')</h3>';
+  if(!d.notes.length)h+='<div class="loading">No detailed notes received yet.</div>';
+  for(const n of d.notes){h+='<div class="note"><div class="notehead">'+esc(n.source)+' · '+esc(n.sender||'')+' · '+esc(fmtDate(n.received_at||n.created_at))+'</div><pre>'+esc(n.note_text)+'</pre></div>';}
+  h+='</div><div class="section"><h3>Photos & files ('+d.media.length+')</h3><div class="media">';
+  if(!d.media.length)h+='<div class="loading">No media received yet.</div>';
+  for(const m of d.media){const isImg=(m.content_type||'').startsWith('image/');h+='<div class="media-item"><a href="'+esc(m.url)+'" target="_blank">'+(isImg?'<img src="'+esc(m.url)+'" alt="'+esc(m.original_filename)+'">':'<div class="filebox">'+esc(m.original_filename)+'</div>')+'</a><div class="media-cap">'+esc(m.source)+' · '+esc(m.original_filename)+'</div></div>';}
+  h+='</div></div>';modalBody.innerHTML=h;
+}
+setTimeout(()=>location.reload(),120000);
+</script>
+</body></html>

@@ -909,10 +909,40 @@ def _decode_base64_content(value):
         raise ValueError("content_base64 is required")
     if raw.startswith("data:") and "," in raw:
         raw = raw.split(",", 1)[1]
+
     try:
         data = base64.b64decode(raw, validate=True)
     except Exception as exc:
         raise ValueError("invalid base64 attachment content") from exc
+
+    # Power Automate/Outlook can sometimes hand us contentBytes that are already
+    # Base64, and wrapping those in base64() produces Base64-of-Base64. Detect
+    # that representation and unwrap one extra layer. This keeps the endpoint
+    # tolerant of both normal and double-encoded attachment payloads.
+    try:
+        candidate = data.strip()
+        if (
+            candidate
+            and len(candidate) % 4 == 0
+            and re.fullmatch(rb"[A-Za-z0-9+/=\r\n]+", candidate)
+        ):
+            nested = base64.b64decode(candidate, validate=True)
+            known_magic = (
+                b"\x89PNG\r\n\x1a\n",
+                b"\xff\xd8\xff",          # JPEG
+                b"%PDF-",                    # PDF
+                b"GIF87a",
+                b"GIF89a",
+                b"PK\x03\x04",             # ZIP / DOCX / XLSX
+            )
+            looks_like_heif = len(nested) >= 12 and nested[4:8] == b"ftyp"
+            if nested.startswith(known_magic) or looks_like_heif:
+                data = nested
+    except Exception:
+        # If the second layer is not valid Base64, the first decode is the
+        # correct file content and should be retained.
+        pass
+
     if not data:
         raise ValueError("attachment is empty")
     if len(data) > JOB_MEDIA_MAX_BYTES:
@@ -1244,72 +1274,6 @@ def warehouse_task_email():
         "source": "EMAIL",
         "instruction_chars": len(instruction),
         "attachments": attachment_results,
-    })
-
-
-@app.get("/warehouse-tasks")
-def warehouse_tasks_board():
-    """Quick warehouse task stack driven from the Freedom mirror."""
-    with db_connect(row_factory=dict_row) as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                """
-                SELECT *
-                FROM public.v_warehouse_task_board
-                WHERE task_status <> 'COMPLETE'
-                  AND task_status <> 'CANCELLED'
-                ORDER BY priority_job DESC, booked_at ASC NULLS LAST, job_ref
-                """
-            )
-            tasks = [dict(r) for r in cur.fetchall()]
-    return render_template("warehouse_tasks.html", tasks=tasks)
-
-
-@app.get("/api/warehouse-task/<job_ref>")
-def warehouse_task_detail(job_ref):
-    """Return one warehouse task plus all notes and media for the card modal."""
-    with db_connect(row_factory=dict_row) as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                "SELECT * FROM public.v_warehouse_task_board WHERE job_ref = %s",
-                (job_ref,),
-            )
-            task = cur.fetchone()
-            if not task:
-                return jsonify({"ok": False, "error": "warehouse task not found"}), 404
-
-            cur.execute(
-                """
-                SELECT id, source, source_message_id, sender, subject, note_text,
-                       received_at, created_at
-                FROM public.job_notes
-                WHERE job_ref = %s
-                ORDER BY COALESCE(received_at, created_at), id
-                """,
-                (job_ref,),
-            )
-            notes = [dict(r) for r in cur.fetchall()]
-
-            cur.execute(
-                """
-                SELECT id, source, source_message_id, source_media_id, sender, caption,
-                       original_filename, content_type, byte_size, received_at, created_at
-                FROM public.job_media
-                WHERE job_ref = %s
-                ORDER BY COALESCE(received_at, created_at), id
-                """,
-                (job_ref,),
-            )
-            media = [dict(r) for r in cur.fetchall()]
-
-    for item in media:
-        item["url"] = f"/job-media/{item['id']}"
-
-    return jsonify({
-        "ok": True,
-        "task": dict(task),
-        "notes": notes,
-        "media": media,
     })
 
 @app.post("/operations/<int:operation_id>/presentation-state")

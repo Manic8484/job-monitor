@@ -498,10 +498,10 @@ def board():
 
     with db_connect(row_factory=dict_row) as conn:
         with conn.cursor() as cur:
-            # PLANNING:
-            # A job belongs on a selected day's planning timeline because its
-            # Freedom booked_at is on that day. Stop timing enriches the card
-            # but cannot remove a booked job from the board.
+            # LIVE PLANNING:
+            # Show operations booked for the selected day only while the
+            # operation still contains at least one unfinished monitored docket.
+            # Completed operations therefore disappear from the live board.
             cur.execute("""
                 SELECT
                     o.id AS op_id,
@@ -539,6 +539,20 @@ def board():
                   AND j.monitoring_enabled = TRUE
                   AND o.monitoring_enabled = TRUE
                   AND COALESCE(o.presentation_hidden, FALSE) = FALSE
+                  AND o.manual_completed_at IS NULL
+                  AND EXISTS (
+                      SELECT 1
+                      FROM public.monitor_jobs j_live
+                      WHERE j_live.operation_id = o.id
+                        AND j_live.monitoring_enabled = TRUE
+                        AND j_live.cancelled_at IS NULL
+                        AND EXISTS (
+                            SELECT 1
+                            FROM public.monitor_stops s_live
+                            WHERE s_live.job_ref = j_live.job_ref
+                              AND s_live.date_completed IS NULL
+                        )
+                  )
                 ORDER BY j.booked_at, j.job_ref
             """, (selected_date,))
             planning_rows = [dict(r) for r in cur.fetchall()]
@@ -626,6 +640,19 @@ def board():
                   AND o.monitoring_enabled = TRUE
                   AND COALESCE(o.presentation_hidden, FALSE) = FALSE
                   AND o.manual_completed_at IS NULL
+                  AND EXISTS (
+                      SELECT 1
+                      FROM public.monitor_jobs j_live
+                      WHERE j_live.operation_id = o.id
+                        AND j_live.monitoring_enabled = TRUE
+                        AND j_live.cancelled_at IS NULL
+                        AND EXISTS (
+                            SELECT 1
+                            FROM public.monitor_stops s_live
+                            WHERE s_live.job_ref = j_live.job_ref
+                              AND s_live.date_completed IS NULL
+                        )
+                  )
                 GROUP BY 1
             """, (lookahead_start, lookahead_end))
             look_rows = [dict(r) for r in cur.fetchall()]

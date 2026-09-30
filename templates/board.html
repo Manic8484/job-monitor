@@ -1,6 +1,6 @@
 <!doctype html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Management Job Monitor</title>
+<title>{{ board_title }}</title>
 <style>
 :root{--red:#dc2626;--amber:#f59e0b;--blue:#2563eb;--green:#16a34a;--grey:#6b7280}
 *{box-sizing:border-box}body{margin:0;font-family:Arial,sans-serif;background:#eef1f5;color:#17202a}
@@ -44,10 +44,11 @@ table{width:100%;border-collapse:collapse;margin-top:9px;font-size:12px}th,td{pa
 .job-summary-top{margin:12px 0 14px;border:1px solid #dde3ea;border-radius:8px;padding:10px;background:#f8fafc}
 .job-summary-top .job-head{display:flex;justify-content:space-between;gap:12px;font-weight:bold;margin-bottom:6px}
 .job-summary-top .line{margin-top:4px}
+.card-badges{display:flex;gap:5px;margin-top:4px}.card-badge{display:inline-block;padding:2px 5px;border-radius:9px;background:rgba(255,255,255,.88);color:#111827;font-size:9px;font-weight:700}.content-section{margin-top:14px}.content-section h3{font-size:13px;margin:0 0 7px}.note-item{border:1px solid #e1e6ed;border-radius:7px;padding:8px;margin-top:7px;background:#fafbfc;font-size:12px}.note-meta{font-size:10px;color:#667085;margin-bottom:4px}.media-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}.media-item{border:1px solid #e1e6ed;border-radius:7px;padding:6px;background:#fff;font-size:11px}.media-item img,.media-item video{width:100%;max-height:180px;object-fit:contain;background:#111;border-radius:4px}.muted{color:#667085;font-size:12px}
 </style></head><body>
-<header><h1>Management Job Monitor — {{ selected_date.strftime('%d %b %Y') }}</h1><div class="controls"><a href="/board?date={{ prev_date.isoformat() }}">Previous</a><a href="/board">Today</a><a href="/board?date={{ next_date.isoformat() }}">Next</a><input type="date" value="{{ selected_date.isoformat() }}" onchange="window.location='/board?date='+this.value"></div></header>
+<header><h1>{{ board_title }} — {{ selected_date.strftime('%d %b %Y') }}</h1><div class="controls"><a href="/board?date={{ prev_date.isoformat() }}">Previous</a><a href="/board">Today</a><a href="/board?date={{ next_date.isoformat() }}">Next</a><input type="date" value="{{ selected_date.isoformat() }}" onchange="window.location='/board?date='+this.value"></div></header>
 <div class="wrap">
-<div class="legend"><span><i class="sw" style="background:#dc2626"></i>Unallocated / at risk</span><span><i class="sw" style="background:#f59e0b"></i>Active</span><span><i class="sw" style="background:#2563eb"></i>Future</span><span><i class="sw" style="background:#16a34a"></i>Complete</span><span style="margin-left:auto;font-weight:bold">{{ planned_count }} planned operation{% if planned_count != 1 %}s{% endif %}</span></div>
+<div class="legend"><span><i class="sw" style="background:#dc2626"></i>Unallocated / at risk</span><span><i class="sw" style="background:#f59e0b"></i>Active</span><span><i class="sw" style="background:#2563eb"></i>Future</span><span><i class="sw" style="background:#16a34a"></i>Complete</span><span style="margin-left:auto;font-weight:bold">{{ planned_count }} planned job{% if planned_count != 1 %}s{% endif %}</span></div>
 <div class="board-row {% if not show_active_column %}planning-only{% endif %}">
 {% if show_active_column %}
 <aside class="active-column"><div class="active-title">Active monitoring</div><div class="active-stack">
@@ -63,6 +64,7 @@ table{width:100%;border-collapse:collapse;margin-top:9px;font-size:12px}th,td{pa
   {% endif %}
 </span>
 {% if op.journey_text %}<span class="journey">{{ op.journey_text }}</span>{% endif %}
+{% if op.note_count or op.media_count %}<span class="card-badges">{% if op.note_count %}<span class="card-badge">📝 {{ op.note_count }}</span>{% endif %}{% if op.media_count %}<span class="card-badge">📷 {{ op.media_count }}</span>{% endif %}</span>{% endif %}
 </div>
 {% else %}<div style="font-size:12px;color:#667085">No active monitored jobs.</div>{% endfor %}
 </div></aside>
@@ -94,6 +96,7 @@ table{width:100%;border-collapse:collapse;margin-top:9px;font-size:12px}th,td{pa
   {% endif %}
 </span>
 {% if op.journey_text %}<span class="journey">{{ op.journey_text }}</span>{% endif %}
+{% if op.note_count or op.media_count %}<span class="card-badges">{% if op.note_count %}<span class="card-badge">📝 {{ op.note_count }}</span>{% endif %}{% if op.media_count %}<span class="card-badge">📷 {{ op.media_count }}</span>{% endif %}</span>{% endif %}
 </div>
 </div>
 {% endfor %}
@@ -101,81 +104,48 @@ table{width:100%;border-collapse:collapse;margin-top:9px;font-size:12px}th,td{pa
 </div>
 </div></div>
 <div class="lookahead"><div class="lookahead-title">Next 10 days</div><div class="lookahead-days">
-{% for d in lookahead_days %}<a class="day-box {% if d.count > 0 %}has-movements{% endif %} {% if d.selected %}selected{% endif %} {% if d.today %}today{% endif %}" href="/board?date={{ d.date.isoformat() }}"><div class="day-name">{{ d.date.strftime('%a') }}</div><div class="day-date">{{ d.date.strftime('%d %b') }}</div><div class="day-count">{% if d.count > 0 %}{{ d.count }} operation{% if d.count != 1 %}s{% endif %}{% else %}No operations{% endif %}</div></a>{% endfor %}
+{% for d in lookahead_days %}<a class="day-box {% if d.count > 0 %}has-movements{% endif %} {% if d.selected %}selected{% endif %} {% if d.today %}today{% endif %}" href="/board?date={{ d.date.isoformat() }}"><div class="day-name">{{ d.date.strftime('%a') }}</div><div class="day-date">{{ d.date.strftime('%d %b') }}</div><div class="day-count">{% if d.count > 0 %}{{ d.count }} job{% if d.count != 1 %}s{% endif %}{% else %}No jobs{% endif %}</div></a>{% endfor %}
 </div></div></div>
-<dialog id="details"><div class="mh"><strong id="mt">Operation</strong><button class="close" onclick="details.close()">×</button></div><div class="mb"><div id="job-summary-top" class="job-summary-top"></div><div class="grid2" id="summary"></div><div class="state-box"><label><input type="checkbox" id="state-collected"> Collected</label><label><input type="checkbox" id="state-complete"> Complete</label><label><input type="checkbox" id="state-hidden"> Hide from presentation</label><button class="save-state" onclick="saveState()">Save</button></div><div id="jobs"></div></div></dialog>
+<dialog id="details"><div class="mh"><strong id="mt">Job</strong><button class="close" onclick="details.close()">×</button></div><div class="mb"><div id="job-summary-top" class="job-summary-top"></div><div class="grid2" id="summary"></div><div id="jobs"></div><div class="content-section"><h3>Messages / notes</h3><div id="notes"></div></div><div class="content-section"><h3>Media</h3><div id="media" class="media-grid"></div></div></div></dialog>
 <script>
 let currentOperation=null;
 function fmt(v){if(v===null||v===undefined||v==="")return"—";if(typeof v==="string"&&v.includes("T")){const d=new Date(v);if(!isNaN(d))return d.toLocaleString("en-GB",{hour12:false});}return v;}
-function openDetails(op){
-currentOperation=op;
-mt.textContent=op.primary_account+" — "+op.status;
-document.getElementById("state-collected").checked=!!op.manual_collected;
-document.getElementById("state-complete").checked=!!op.manual_complete;
-document.getElementById("state-hidden").checked=!!op.presentation_hidden;
+function addPair(container,label,value){const a=document.createElement("div");a.className="lab";a.textContent=label;const b=document.createElement("div");b.textContent=fmt(value);container.append(a,b);}
+async function openDetails(op){
+  currentOperation=op;
+  mt.textContent=(op.primary_account||op.job_ref)+" — "+op.status;
+  summary.innerHTML=""; jobs.innerHTML=""; notes.innerHTML='<div class="muted">Loading…</div>'; media.innerHTML='<div class="muted">Loading…</div>';
+  details.showModal();
 
-const rows=[["Operation ID",op.operation_id],["Allocation",op.allocation_status],["Active dockets",op.active_job_count],["Unallocated dockets",op.unallocated_job_count],["Note",op.manual_note]];
-summary.innerHTML="";
-for(const [l,v] of rows){
-  const a=document.createElement("div");a.className="lab";a.textContent=l;
-  const b=document.createElement("div");b.textContent=fmt(v);
-  summary.append(a,b);
-}
+  const response=await fetch("/api/job-board/"+encodeURIComponent(op.job_ref));
+  const data=await response.json();
+  if(!response.ok||!data.ok){notes.innerHTML='<div class="muted">Could not load job content.</div>';media.innerHTML="";return;}
+  const j=data.job;
+  const driverBits=[j.driver_callsign||j.agent_code||"UNALLOCATED",[j.driver_firstname,j.driver_lastname].filter(Boolean).join(" ")||j.agent_name||""].filter(Boolean).join(" · ");
+  const top=document.getElementById("job-summary-top");top.innerHTML="";
+  const head=document.createElement("div");head.className="job-head";head.innerHTML="<span>Job "+j.job_ref+"</span><span>"+driverBits+"</span>";top.appendChild(head);
+  const vehicle=document.createElement("div");vehicle.className="line";vehicle.textContent=[j.vehicle_code||"",j.vehicle_description||""].filter(Boolean).join(" · ")||"—";top.appendChild(vehicle);
+  const goods=document.createElement("div");goods.className="line";goods.textContent="Goods: "+(j.goods||"—");top.appendChild(goods);
 
-const top=document.getElementById("job-summary-top");
-top.innerHTML="";
-if(op.jobs.length){
-  const j=op.jobs[0];
+  addPair(summary,"Account",j.account_name);
+  addPair(summary,"Booked",j.booked_at);
+  addPair(summary,"Freedom status",j.freedom_status);
+  addPair(summary,"Special instructions",j.special_instructions);
+  addPair(summary,"Despatch instructions",j.despatch_instructions);
 
-  const head=document.createElement("div");
-  head.className="job-head";
-  const driverBits=[j.agent_callsign||"UNALLOCATED",j.driver_name||""].filter(Boolean).join(" · ");
-  head.innerHTML="<span>Job "+j.job_ref+"</span><span>"+driverBits+"</span>";
-  top.appendChild(head);
-
-  const vehicle=document.createElement("div");
-  vehicle.className="line";
-  const vehicleBits=[j.vehicle||"",j.vehicle_description||""].filter(Boolean).join(" · ");
-  vehicle.textContent=vehicleBits||"—";
-  top.appendChild(vehicle);
-
-  const goods=document.createElement("div");
-  goods.className="line";
-  goods.textContent="Goods: "+(j.goods||"—");
-  top.appendChild(goods);
-}
-
-jobs.innerHTML="";
-for(const j of op.jobs){
-  const block=document.createElement("div");
-  block.className="job-block";
-
-  if(op.jobs.length>1){
-    const head=document.createElement("div");
-    head.className="job-head";
-    head.innerHTML="<span>Job "+j.job_ref+"</span>";
-    block.appendChild(head);
-  }
-
-  const t=document.createElement("table");
-  t.innerHTML="<thead><tr><th>Stop</th><th>Country</th><th>Postcode</th><th>Required</th><th>Completed</th></tr></thead>";
+  const block=document.createElement("div");block.className="job-block";
+  const t=document.createElement("table");t.innerHTML="<thead><tr><th>Stop</th><th>Location</th><th>Postcode</th><th>Required</th><th>Completed</th></tr></thead>";
   const tb=document.createElement("tbody");
-  for(const s of j.stops){
-    const tr=document.createElement("tr");
-    for(const x of [s.drop_order,s.country_code||s.country,s.postcode,fmt(s.required_from),fmt(s.date_completed)]){
-      const td=document.createElement("td");
-      td.textContent=x??"—";
-      tr.appendChild(td);
-    }
-    tb.appendChild(tr);
-  }
-  t.appendChild(tb);
-  block.appendChild(t);
-  jobs.appendChild(block);
+  for(const st of data.stops){const tr=document.createElement("tr");for(const x of [st.drop_order,st.address_name||st.country_code||st.country,st.postcode,fmt(st.required_from),fmt(st.date_completed)]){const td=document.createElement("td");td.textContent=x??"—";tr.appendChild(td);}tb.appendChild(tr);}t.appendChild(tb);block.appendChild(t);jobs.appendChild(block);
+
+  notes.innerHTML="";
+  if(!data.notes.length){notes.innerHTML='<div class="muted">No messages or notes for this job.</div>';}
+  for(const n of data.notes){const item=document.createElement("div");item.className="note-item";const meta=document.createElement("div");meta.className="note-meta";meta.textContent=[n.source,n.sender,fmt(n.received_at||n.created_at)].filter(Boolean).join(" · ");const body=document.createElement("div");body.textContent=n.note_text||n.subject||"";item.append(meta,body);notes.appendChild(item);}
+
+  media.innerHTML="";
+  if(!data.media.length){media.innerHTML='<div class="muted">No media for this job.</div>';}
+  for(const m of data.media){const item=document.createElement("div");item.className="media-item";let el;if((m.content_type||"").startsWith("video/")){el=document.createElement("video");el.controls=true;el.src=m.url;}else if((m.content_type||"").startsWith("image/")){el=document.createElement("img");el.loading="lazy";el.src=m.url;}else{el=document.createElement("a");el.href=m.url;el.target="_blank";el.textContent=m.original_filename||"Open attachment";}item.appendChild(el);const cap=document.createElement("div");cap.textContent=m.caption||m.original_filename||m.source||"";item.appendChild(cap);media.appendChild(item);}
 }
-details.showModal();
-}
-async function saveState(){if(!currentOperation)return;const response=await fetch("/operations/"+currentOperation.operation_id+"/presentation-state",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({collected:document.getElementById("state-collected").checked,complete:document.getElementById("state-complete").checked,hidden:document.getElementById("state-hidden").checked})});const data=await response.json();if(!response.ok||!data.ok){alert(data.error||"Could not save operation state");return;}window.location.reload();}
 </script>
 <script>
 setTimeout(function () {

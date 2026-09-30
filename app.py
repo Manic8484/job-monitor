@@ -11,6 +11,7 @@ from zoneinfo import ZoneInfo
 
 import psycopg
 from psycopg.rows import dict_row
+from psycopg import sql
 from flask import Flask, jsonify, render_template, request, Response
 
 from google.cloud import storage
@@ -26,6 +27,8 @@ INSTANCE_CONNECTION_NAME = os.getenv("INSTANCE_CONNECTION_NAME")
 INGEST_TOKEN = os.getenv("JOB_MONITOR_INGEST_TOKEN")
 JOB_MEDIA_BUCKET = os.getenv("JOB_MEDIA_BUCKET", "warehouse-media")
 JOB_MEDIA_MAX_BYTES = int(os.getenv("JOB_MEDIA_MAX_BYTES", str(20 * 1024 * 1024)))
+JOB_BOARD_VIEW = os.getenv("JOB_BOARD_VIEW", "public.v_job_board_special")
+JOB_BOARD_TITLE = os.getenv("JOB_BOARD_TITLE", "High Importance Jobs")
 
 def db_connect(row_factory=None):
     database_url = os.getenv("DATABASE_URL")
@@ -1547,8 +1550,91 @@ def operation_journey(jobs):
     }
 
 
+@app.get("/api/job-board/<job_ref>")
+def job_board_detail(job_ref):
+    """Common job-card detail: Freedom job + stops + Operations notes/media."""
+    with db_connect(row_factory=dict_row) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT
+                    job_ref, driver_callsign, driver_firstname, driver_lastname,
+                    account_name, agent_code, agent_name,
+                    vehicle_code, vehicle_description, cancelled_at, booked_at,
+                    goods, special_instructions, despatch_instructions,
+                    freedom_status, job_flags
+                FROM public.freedom_jobs
+                WHERE job_ref = %s
+                """,
+                (job_ref,),
+            )
+            job = cur.fetchone()
+            if not job:
+                return jsonify({"ok": False, "error": "job not found"}), 404
+
+            cur.execute(
+                """
+                SELECT stop_id, drop_order, drop_type, address_name,
+                       address_line_1, address_line_2, postcode, country,
+                       country_code, required_from, required_to, date_completed
+                FROM public.freedom_stops
+                WHERE job_ref = %s
+                ORDER BY drop_order, stop_id
+                """,
+                (job_ref,),
+            )
+            stops = [dict(r) for r in cur.fetchall()]
+
+            cur.execute(
+                """
+                SELECT id, source, source_message_id, sender, subject,
+                       note_text, received_at, created_at
+                FROM public.job_notes
+                WHERE job_ref = %s
+                ORDER BY COALESCE(received_at, created_at), id
+                """,
+                (job_ref,),
+            )
+            notes = [dict(r) for r in cur.fetchall()]
+
+            cur.execute(
+                """
+                SELECT id, source, source_message_id, source_media_id, sender,
+                       caption, original_filename, content_type, byte_size,
+                       received_at, created_at
+                FROM public.job_media
+                WHERE job_ref = %s
+                ORDER BY COALESCE(received_at, created_at), id
+                """,
+                (job_ref,),
+            )
+            media = [dict(r) for r in cur.fetchall()]
+
+    for item in media:
+        item["url"] = f"/job-media/{item['id']}"
+
+    return jsonify({
+        "ok": True,
+        "job": dict(job),
+        "stops": stops,
+        "notes": notes,
+        "media": media,
+    })
+
+
+def _board_view_identifier():
+    """Return a safely quoted schema/view identifier from JOB_BOARD_VIEW."""
+    parts = JOB_BOARD_VIEW.split(".")
+    if len(parts) == 1:
+        parts = ["public", parts[0]]
+    if len(parts) != 2 or not all(re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", p or "") for p in parts):
+        raise RuntimeError("JOB_BOARD_VIEW must be a simple schema.view identifier")
+    return sql.Identifier(parts[0]), sql.Identifier(parts[1])
+
+
 @app.get("/board")
 def board():
+    """Generic live job board backed by a common database-view contract."""
     today = datetime.now(LONDON).date()
     raw_date = request.args.get("date")
     selected_date = date.fromisoformat(raw_date) if raw_date else today
@@ -1558,312 +1644,149 @@ def board():
     day_end = day_start + timedelta(days=1)
     lookahead_start = datetime.combine(today, time.min).replace(tzinfo=LONDON)
     lookahead_end = lookahead_start + timedelta(days=10)
+    schema_ident, view_ident = _board_view_identifier()
+    board_view = sql.SQL("{}.{}").format(schema_ident, view_ident)
 
     with db_connect(row_factory=dict_row) as conn:
         with conn.cursor() as cur:
-            # PLANNING:
-            # A job belongs on a selected day's planning timeline because its
-            # Freedom booked_at is on that day. Stop timing enriches the card
-            # but cannot remove a booked job from the board.
-            cur.execute("""
-                SELECT
-                    o.id AS op_id,
-                    o.title,
-                    o.manual_note,
-                    o.manual_collected_at,
-                    o.manual_completed_at,
-                    o.presentation_hidden,
-                    oa.allocation_status,
-                    oa.active_job_count,
-                    oa.unallocated_job_count,
-                    j.job_ref,
-                    j.operation_id,
-                    j.agent_callsign,
-                    j.driver_firstname,
-                    j.driver_lastname,
-                    j.account,
-                    j.vehicle,
-                    j.vehicle_description,
-                    j.component_role,
-                    j.cancelled_at,
-                    j.booked_at,
-                    j.goods,
-                    j.special_instructions,
-                    j.despatch_instructions,
-                    j.freedom_status,
-                    j.freedom_status_text,
-                    j.monitoring_enabled
-                FROM public.monitor_jobs j
-                JOIN public.monitor_operations o
-                  ON o.id = j.operation_id
-                JOIN public.v_monitor_operation_allocation oa
-                  ON oa.operation_id = o.id
-                WHERE (j.booked_at AT TIME ZONE 'Europe/London')::date = %s
-                  AND j.monitoring_enabled = TRUE
-                  AND o.monitoring_enabled = TRUE
-                  AND COALESCE(o.presentation_hidden, FALSE) = FALSE
-                ORDER BY j.booked_at, j.job_ref
-            """, (selected_date,))
+            planning_query = sql.SQL("""
+                SELECT *
+                FROM {view}
+                WHERE (booked_at AT TIME ZONE 'Europe/London')::date = %s
+                  AND COALESCE(is_complete, FALSE) = FALSE
+                  AND cancelled_at IS NULL
+                ORDER BY booked_at, job_ref
+            """).format(view=board_view)
+            cur.execute(planning_query, (selected_date,))
             planning_rows = [dict(r) for r in cur.fetchall()]
 
-            # ACTIVE MONITORING:
-            # Today only: incomplete operations that began before today.
             carry_rows = []
             if show_active_column:
-                cur.execute("""
-                    SELECT
-                        o.id AS op_id,
-                        o.title,
-                        o.manual_note,
-                        o.manual_collected_at,
-                        o.manual_completed_at,
-                        o.presentation_hidden,
-                        oa.allocation_status,
-                        oa.active_job_count,
-                        oa.unallocated_job_count,
-                        j.job_ref,
-                        j.operation_id,
-                        j.agent_callsign,
-                        j.driver_firstname,
-                        j.driver_lastname,
-                        j.account,
-                        j.vehicle,
-                        j.vehicle_description,
-                        j.component_role,
-                        j.cancelled_at,
-                        j.booked_at,
-                        j.goods,
-                        j.special_instructions,
-                        j.despatch_instructions,
-                        j.freedom_status,
-                        j.freedom_status_text,
-                        j.monitoring_enabled
-                    FROM public.monitor_jobs j
-                    JOIN public.monitor_operations o
-                      ON o.id = j.operation_id
-                    JOIN public.v_monitor_operation_allocation oa
-                      ON oa.operation_id = o.id
-                    WHERE j.booked_at < %s
-                      AND j.cancelled_at IS NULL
-                      AND j.monitoring_enabled = TRUE
-                      AND o.monitoring_enabled = TRUE
-                      AND COALESCE(o.presentation_hidden, FALSE) = FALSE
-                      AND o.manual_completed_at IS NULL
-                      AND EXISTS (
-                          SELECT 1
-                          FROM public.monitor_stops sx
-                          WHERE sx.job_ref = j.job_ref
-                            AND sx.date_completed IS NULL
-                      )
-                    ORDER BY j.booked_at, j.job_ref
-                """, (day_start,))
+                carry_query = sql.SQL("""
+                    SELECT *
+                    FROM {view}
+                    WHERE booked_at < %s
+                      AND COALESCE(is_complete, FALSE) = FALSE
+                      AND cancelled_at IS NULL
+                    ORDER BY booked_at, job_ref
+                """).format(view=board_view)
+                cur.execute(carry_query, (day_start,))
                 carry_rows = [dict(r) for r in cur.fetchall()]
 
-            all_rows = planning_rows + carry_rows
-            job_refs = sorted({r["job_ref"] for r in all_rows})
-
+            job_refs = sorted({r["job_ref"] for r in planning_rows + carry_rows})
             stops_by_job = {}
             if job_refs:
-                cur.execute("""
-                    SELECT *
-                    FROM public.monitor_stops
+                cur.execute(
+                    """
+                    SELECT stop_id, job_ref, drop_order, drop_type,
+                           address_name, postcode, country, country_code,
+                           required_from, required_to, date_completed
+                    FROM public.freedom_stops
                     WHERE job_ref = ANY(%s)
-                    ORDER BY job_ref, drop_order
-                """, (job_refs,))
-                for s in cur.fetchall():
-                    stops_by_job.setdefault(s["job_ref"], []).append(dict(s))
+                    ORDER BY job_ref, drop_order, stop_id
+                    """,
+                    (job_refs,),
+                )
+                for row in cur.fetchall():
+                    stops_by_job.setdefault(row["job_ref"], []).append(dict(row))
 
-            # Look-ahead is also based on booked_at, so the day-count tiles and
-            # the planning view use the same rule.
-            cur.execute("""
+            look_query = sql.SQL("""
                 SELECT
-                    (j.booked_at AT TIME ZONE 'Europe/London')::date AS booked_day,
-                    COUNT(DISTINCT j.operation_id) AS operation_count
-                FROM public.monitor_jobs j
-                JOIN public.monitor_operations o
-                  ON o.id = j.operation_id
-                WHERE j.booked_at >= %s
-                  AND j.booked_at < %s
-                  AND j.cancelled_at IS NULL
-                  AND j.monitoring_enabled = TRUE
-                  AND o.monitoring_enabled = TRUE
-                  AND COALESCE(o.presentation_hidden, FALSE) = FALSE
-                  AND o.manual_completed_at IS NULL
+                    (booked_at AT TIME ZONE 'Europe/London')::date AS booked_day,
+                    COUNT(*) AS job_count
+                FROM {view}
+                WHERE booked_at >= %s
+                  AND booked_at < %s
+                  AND COALESCE(is_complete, FALSE) = FALSE
+                  AND cancelled_at IS NULL
                 GROUP BY 1
-            """, (lookahead_start, lookahead_end))
+            """).format(view=board_view)
+            cur.execute(look_query, (lookahead_start, lookahead_end))
             look_rows = [dict(r) for r in cur.fetchall()]
-
-    def build_operations(source_rows):
-        ops = {}
-        for r in source_rows:
-            op_id = r["op_id"]
-            op = ops.setdefault(op_id, {
-                "operation_id": op_id,
-                "title": r["title"],
-                "manual_note": r["manual_note"],
-                "manual_collected_at": r["manual_collected_at"],
-                "manual_completed_at": r["manual_completed_at"],
-                "presentation_hidden": bool(r["presentation_hidden"]),
-                "allocation_status": r["allocation_status"],
-                "active_job_count": r["active_job_count"],
-                "unallocated_job_count": r["unallocated_job_count"],
-                "jobs": [],
-            })
-
-            stops = stops_by_job.get(r["job_ref"], [])
-            all_completed = bool(stops) and all(s["date_completed"] for s in stops)
-
-            op["jobs"].append({
-                "job_ref": r["job_ref"],
-                "agent_callsign": r["agent_callsign"],
-                "driver_name": " ".join(
-                    p for p in [r["driver_firstname"], r["driver_lastname"]] if p
-                ),
-                "account": r["account"],
-                "vehicle": r["vehicle"],
-                "vehicle_description": r["vehicle_description"],
-                "component_role": r["component_role"],
-                "cancelled_at": r["cancelled_at"].isoformat() if r["cancelled_at"] else None,
-                "booked_at": r["booked_at"].isoformat() if r["booked_at"] else None,
-                "goods": r["goods"],
-                "special_instructions": r["special_instructions"],
-                "despatch_instructions": r["despatch_instructions"],
-                "freedom_status": r["freedom_status"],
-                "freedom_status_text": r["freedom_status_text"],
-                "active": r["cancelled_at"] is None and not all_completed,
-                "stops": [{
-                    "stop_id": s["stop_id"],
-                    "drop_order": s["drop_order"],
-                    "postcode": s["postcode"],
-                    "country": s["country"],
-                    "country_code": s["country_code"],
-                    "required_from": s["required_from"].isoformat() if s["required_from"] else None,
-                    "date_completed": s["date_completed"].isoformat() if s["date_completed"] else None,
-                } for s in stops],
-            })
-        return ops
-
-    planning_ops = build_operations(planning_rows)
-    carry_ops = build_operations(carry_rows)
 
     now = datetime.now(LONDON)
 
-    def decorate(op, planning=True):
-        timed = []
-        active_any = False
-        cancelled_all = True
+    def decorate(row, planning=True):
+        stops = stops_by_job.get(row["job_ref"], [])
+        booked_at = row.get("booked_at")
+        driver_callsign = row.get("driver_callsign") or row.get("agent_code")
+        driver_name = " ".join(
+            p for p in [row.get("driver_firstname"), row.get("driver_lastname")] if p
+        ) or row.get("agent_name") or ""
 
-        for j in op["jobs"]:
-            active_any = active_any or j["active"]
-            if j["cancelled_at"] is None:
-                cancelled_all = False
-            for s in j["stops"]:
-                if s["required_from"]:
-                    timed.append((datetime.fromisoformat(s["required_from"]), s, j["job_ref"]))
-
-        # Planning anchor is booked_at, not stop data.
-        booked_times = [
-            datetime.fromisoformat(j["booked_at"])
-            for j in op["jobs"]
-            if j["booked_at"]
-        ]
-        anchor = min(booked_times, default=day_start)
-
-        manual_complete = op["manual_completed_at"] is not None
-        manual_collected = op["manual_collected_at"] is not None
-
-        if manual_complete:
-            status, cls = "COMPLETE", "complete"
-        elif op["allocation_status"] == "UNALLOCATED":
+        if not driver_callsign:
             status, cls = "UNALLOCATED", "unallocated"
-        elif cancelled_all:
-            status, cls = "CANCELLED", "cancelled"
-        elif manual_collected or (active_any and anchor <= now):
+        elif booked_at and booked_at <= now:
             status, cls = "ACTIVE", "active"
-        elif active_any:
-            status, cls = "FUTURE", "future"
         else:
-            status, cls = "COMPLETE", "complete"
+            status, cls = "FUTURE", "future"
 
-        accounts = sorted({j["account"] for j in op["jobs"] if j["account"]})
-        vehicles = [j["vehicle"] for j in op["jobs"] if j["vehicle"]]
-        journey = operation_journey(op["jobs"])
-
-        # First pickup marker remains omitted; later timed stops only.
-        timed_today = sorted(
-            [x for x in timed if day_start <= x[0] < day_end],
-            key=lambda x: x[0]
-        )
-        markers = []
-        for dt, s, job_ref in timed_today[1:]:
-            if not s:
-                continue
-            pct = max(0, min(100, ((dt - day_start).total_seconds() / 86400) * 100))
-            markers.append({
-                "left_pct": pct,
-                "postcode": s["postcode"] or "",
-                "country_code": s["country_code"] or "",
-                "job_ref": job_ref,
+        job = {
+            "job_ref": row["job_ref"],
+            "driver_callsign": driver_callsign,
+            "driver_name": driver_name,
+            "account": row.get("account_name"),
+            "vehicle": row.get("vehicle_code"),
+            "vehicle_description": row.get("vehicle_description"),
+            "booked_at": booked_at.isoformat() if booked_at else None,
+            "goods": row.get("goods"),
+            "special_instructions": row.get("special_instructions"),
+            "despatch_instructions": row.get("despatch_instructions"),
+            "freedom_status": row.get("freedom_status"),
+            "job_flags": row.get("job_flags"),
+            "stops": [{
+                "stop_id": s["stop_id"],
                 "drop_order": s["drop_order"],
-            })
+                "postcode": s["postcode"],
+                "country": s["country"],
+                "country_code": s["country_code"],
+                "required_from": s["required_from"].isoformat() if s["required_from"] else None,
+                "date_completed": s["date_completed"].isoformat() if s["date_completed"] else None,
+            } for s in stops],
+        }
+        journey = operation_journey([job])
 
+        anchor = booked_at or day_start
         result = {
-            **op,
+            "operation_id": row["job_ref"],
+            "job_ref": row["job_ref"],
             "status": status,
             "status_class": cls,
-            "primary_account": accounts[0] if accounts else (op["title"] or f"Operation {op['operation_id']}"),
-            "vehicles": vehicles,
-            "job_count": len(op["jobs"]),
-            "markers": markers,
-            "manual_collected": manual_collected,
-            "manual_complete": manual_complete,
+            "primary_account": row.get("account_name") or row["job_ref"],
+            "vehicles": [row.get("vehicle_code")] if row.get("vehicle_code") else [],
+            "jobs": [job],
+            "job_count": 1,
             "journey_text": journey["journey_text"],
             "international": journey["international"],
             "country_codes": journey["country_codes"],
+            "note_count": int(row.get("note_count") or 0),
+            "media_count": int(row.get("media_count") or 0),
         }
-
         if planning:
-            result["left_pct"] = max(
-                0,
-                min(100, ((anchor - day_start).total_seconds() / 86400) * 100)
-            )
-            result["width_pct"] = 24 / 1440 * 100
-
+            result["left_pct"] = max(0, min(100, ((anchor - day_start).total_seconds() / 86400) * 100))
         return result
 
-    timeline_operations = [decorate(op, planning=True) for op in planning_ops.values()]
-    active_operations = [decorate(op, planning=False) for op in carry_ops.values()]
+    timeline_operations = [decorate(r, planning=True) for r in planning_rows]
+    active_operations = [decorate(r, planning=False) for r in carry_rows]
+    timeline_operations.sort(key=lambda x: (x["left_pct"], x["job_ref"]))
+    active_operations.sort(key=lambda x: (x["status"] != "UNALLOCATED", x["job_ref"]))
 
-    timeline_operations.sort(key=lambda x: (x["left_pct"], x["operation_id"]))
-    active_operations.sort(key=lambda x: (x["status"] != "UNALLOCATED", x["operation_id"]))
-
-    for idx, op in enumerate(timeline_operations):
-        op["lane"] = idx
-
-    # Height must grow with every visible planning row.
-    # Row pitch in the template is 68px, with room above/below the first/last card.
-    # Keep the denser 34px row pitch, but add enough bottom clearance for
-    # the full final card (including border/shadow) before the 10-day strip.
     ticks = [{"label": f"{h:02d}:00", "left_pct": h / 24 * 100} for h in range(0, 25, 2)]
-
     counts = {today + timedelta(days=i): 0 for i in range(10)}
-    for r in look_rows:
-        d = r["booked_day"]
-        if d in counts:
-            counts[d] = r["operation_count"]
+    for row in look_rows:
+        if row["booked_day"] in counts:
+            counts[row["booked_day"]] = row["job_count"]
 
-    lookahead_days = []
-    for i in range(10):
-        d = today + timedelta(days=i)
-        lookahead_days.append({
-            "date": d,
-            "count": counts[d],
-            "selected": d == selected_date,
-            "today": d == today,
-        })
+    lookahead_days = [{
+        "date": today + timedelta(days=i),
+        "count": counts[today + timedelta(days=i)],
+        "selected": (today + timedelta(days=i)) == selected_date,
+        "today": i == 0,
+    } for i in range(10)]
 
     return render_template(
         "board.html",
+        board_title=JOB_BOARD_TITLE,
         active_operations=active_operations,
         timeline_operations=timeline_operations,
         show_active_column=show_active_column,

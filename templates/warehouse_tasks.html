@@ -3,94 +3,41 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Warehouse Task Management</title>
+<title>Warehouse Tasks</title>
 <style>
-:root{--bg:#eef1f5;--ink:#17202a;--muted:#667085;--line:#d8dee8;--red:#dc2626;--amber:#f59e0b;--blue:#2563eb;--green:#16a34a;--panel:#fff}
+:root{--bg:#eef1f5;--ink:#17202a;--muted:#667085;--line:#d8dee8;--red:#dc2626;--amber:#f59e0b;--blue:#2563eb;--green:#16a34a}
 *{box-sizing:border-box}body{margin:0;font-family:Arial,sans-serif;background:var(--bg);color:var(--ink)}
-header{position:sticky;top:0;z-index:30;background:#fff;border-bottom:1px solid #ddd;padding:12px 16px;display:flex;justify-content:space-between;align-items:center}
-h1{margin:0;font-size:22px}.subhead{font-size:12px;color:var(--muted)}
-main{padding:14px;overflow-x:auto}.board{display:flex;gap:14px;align-items:flex-start;min-width:max-content}.column{width:310px;background:#f7f9fc;border:1px solid var(--line);border-radius:12px;padding:10px;min-height:220px}.column.unallocated{width:290px}.column-head{display:flex;justify-content:space-between;align-items:end;margin-bottom:9px}.column-head h2{font-size:18px;margin:0}.column-code{font-size:10px;color:var(--muted);font-weight:700}.section{margin-top:10px}.section-title{font-size:10px;font-weight:800;letter-spacing:.08em;color:#667085;text-transform:uppercase;border-bottom:1px solid #dfe4ec;padding:0 2px 5px;margin-bottom:7px}.section-title.amber{color:#a15c00}.section-title.green{color:#087a32}.section-title.red{color:#a31212}
-.cards{display:flex;flex-direction:column;gap:7px;min-height:8px}.task{position:relative;background:#fff;border:1px solid var(--line);border-left:7px solid var(--blue);border-radius:8px;padding:9px 10px;box-shadow:0 1px 3px rgba(0,0,0,.06);cursor:pointer}.task:hover{box-shadow:0 2px 7px rgba(0,0,0,.13)}.task.red{border-left-color:var(--red);background:#fffafa}.task.blue{border-left-color:var(--blue)}.task.amber{border-left-color:var(--amber);background:#fffaf0}.task.green{border-left-color:var(--green);background:#f5fff7;opacity:.87}.task.dragging{opacity:.45}.task.dragover{outline:2px dashed #667085;outline-offset:2px}.task[draggable="true"]{cursor:grab}.refrow{display:flex;gap:7px;align-items:center;flex-wrap:wrap}.ref{font-weight:800;font-size:15px}.badge{font-size:9px;font-weight:800;padding:3px 6px;border-radius:10px;background:#eef2f6}.badge.priority{background:#fee2e2;color:#991b1b}.headline{font-size:13px;line-height:1.28;margin-top:5px}.meta{display:flex;gap:7px;flex-wrap:wrap;font-size:9px;color:var(--muted);margin-top:6px}.counts{position:absolute;right:8px;top:8px;font-size:9px;color:#667085}.empty{font-size:11px;color:#98a2b3;padding:7px 3px}.draghelp{font-size:9px;color:#98a2b3;margin-top:6px}
-dialog{border:0;border-radius:12px;width:min(1000px,94vw);padding:0;box-shadow:0 20px 60px rgba(0,0,0,.28)}dialog::backdrop{background:rgba(15,23,42,.48)}.mh{padding:14px 16px;border-bottom:1px solid #e5e7eb;display:flex;justify-content:space-between;align-items:center}.mh strong{font-size:20px}.close{font-size:25px;border:0;background:none;cursor:pointer}.mb{padding:16px}.summary{background:#f8fafc;border:1px solid #e2e8f0;border-radius:9px;padding:12px;margin-bottom:14px}.summary .headline{font-size:17px}.detail-section{margin-top:18px}.detail-section h3{margin:0 0 8px;font-size:14px}.note{border-left:4px solid #94a3b8;background:#f8fafc;padding:9px 11px;margin-bottom:8px;border-radius:4px}.notehead{font-size:10px;font-weight:800;color:#64748b;margin-bottom:5px}.note pre{font:inherit;white-space:pre-wrap;margin:0}.media{display:flex;gap:10px;overflow-x:auto;padding-bottom:7px}.media-item{min-width:145px;max-width:180px}.media-item img{width:145px;height:120px;object-fit:cover;border-radius:7px;border:1px solid #ddd;display:block}.filebox{width:145px;height:120px;border:1px solid #ddd;border-radius:7px;display:flex;align-items:center;justify-content:center;background:#f8fafc;font-size:12px;text-align:center;padding:8px}.media-cap{font-size:9px;margin-top:4px;color:#64748b;overflow-wrap:anywhere}.loading{color:var(--muted)}
-.legend{display:flex;gap:12px;align-items:center;flex-wrap:wrap;font-size:10px}.legend span{display:flex;align-items:center;gap:4px}.dot{width:9px;height:9px;border-radius:50%}.dot.red{background:var(--red)}.dot.blue{background:var(--blue)}.dot.amber{background:var(--amber)}.dot.green{background:var(--green)}
-@media(max-width:700px){header{align-items:flex-start;gap:10px;flex-direction:column}.column{width:280px}.column.unallocated{width:270px}}
+header{position:sticky;top:0;z-index:20;background:#fff;border-bottom:1px solid #ddd;padding:14px 18px;display:flex;justify-content:space-between;align-items:center}
+h1{margin:0;font-size:23px}.subhead{font-size:12px;color:var(--muted)}
+main{padding:16px;max-width:1500px;margin:auto}.stack{display:flex;flex-direction:column;gap:12px}
+.task{background:#fff;border:1px solid var(--line);border-radius:10px;box-shadow:0 2px 6px rgba(0,0,0,.08);padding:14px 16px;display:grid;grid-template-columns:80px 1fr auto;gap:14px;align-items:start;cursor:pointer}
+.task:hover{box-shadow:0 3px 10px rgba(0,0,0,.14)}.pos{font-size:34px;font-weight:800;text-align:center;color:#344054}.pos small{display:block;font-size:9px;text-transform:uppercase;color:var(--muted)}
+.task.priority{border-left:7px solid var(--red)}.task.normal{border-left:7px solid var(--blue)}
+.topline{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.ref{font-size:18px;font-weight:800}.service{font-size:11px;font-weight:700;background:#eef2f6;border-radius:12px;padding:3px 7px}.who{font-size:14px;font-weight:700;margin-top:5px}.headline{font-size:18px;margin-top:8px}.meta{display:flex;gap:12px;flex-wrap:wrap;font-size:11px;color:var(--muted);margin-top:9px}.badge{font-size:10px;font-weight:800;padding:4px 7px;border-radius:12px;background:#f2f4f7}.badge.red{background:#fee2e2;color:#991b1b}.counts{text-align:right;white-space:nowrap;font-size:12px;color:#475467}.counts strong{font-size:17px;color:#111827}.empty{background:#fff;border:1px solid var(--line);border-radius:10px;padding:30px;text-align:center;color:var(--muted)}
+dialog{border:0;border-radius:12px;width:min(1000px,94vw);padding:0;box-shadow:0 20px 60px rgba(0,0,0,.28)}dialog::backdrop{background:rgba(15,23,42,.48)}.mh{padding:14px 16px;border-bottom:1px solid #e5e7eb;display:flex;justify-content:space-between;align-items:center}.mh strong{font-size:20px}.close{font-size:25px;border:0;background:none;cursor:pointer}.mb{padding:16px}.summary{background:#f8fafc;border:1px solid #e2e8f0;border-radius:9px;padding:12px;margin-bottom:14px}.summary .headline{margin-top:5px}.section{margin-top:18px}.section h3{margin:0 0 8px;font-size:14px}.note{border-left:4px solid #94a3b8;background:#f8fafc;padding:9px 11px;margin-bottom:8px;border-radius:4px}.notehead{font-size:10px;font-weight:800;color:#64748b;margin-bottom:5px}.note pre{font:inherit;white-space:pre-wrap;margin:0}.media{display:flex;gap:10px;overflow-x:auto;padding-bottom:7px}.media-item{min-width:145px;max-width:180px}.media-item img{width:145px;height:120px;object-fit:cover;border-radius:7px;border:1px solid #ddd;display:block}.filebox{width:145px;height:120px;border:1px solid #ddd;border-radius:7px;display:flex;align-items:center;justify-content:center;background:#f8fafc;font-size:12px;text-align:center;padding:8px}.media-cap{font-size:9px;margin-top:4px;color:#64748b;overflow-wrap:anywhere}.loading{color:var(--muted)}
+@media(max-width:700px){.task{grid-template-columns:52px 1fr}.counts{grid-column:2;text-align:left}.pos{font-size:26px}.headline{font-size:15px}}
 </style>
 </head>
 <body>
-<header>
-  <div><h1>Warehouse Task Management</h1><div class="subhead">Freedom controls allocation and progress · management controls waiting order</div></div>
-  <div><div class="legend"><span><i class="dot red"></i>Unallocated</span><span><i class="dot blue"></i>Queued</span><span><i class="dot amber"></i>In progress</span><span><i class="dot green"></i>Completed today</span></div><div class="subhead" style="text-align:right;margin-top:4px">{{ total_tasks }} visible tasks</div></div>
-</header>
-<main><div class="board">
-
-<section class="column unallocated">
-  <div class="column-head"><h2>Unallocated</h2><span class="column-code">{{ unallocated|length }}</span></div>
-  <div class="section"><div class="section-title red">Needs allocation</div><div class="cards">
-  {% for t in unallocated %}
-    <article class="task red" onclick="openTask('{{ t.job_ref }}')">
-      <div class="refrow"><span class="ref">{{ t.job_ref }}</span>{% if t.priority_job %}<span class="badge priority">PRIORITY</span>{% endif %}</div>
-      <div class="headline">{{ t.despatch_instructions or 'No short instruction supplied' }}</div>
-      <div class="meta"><span>{{ t.vehicle_description or 'Warehouse Task' }}</span><span>{{ t.note_count }} notes</span><span>{{ t.image_count }} images</span></div>
-    </article>
-  {% else %}<div class="empty">No unallocated work.</div>{% endfor %}
-  </div></div>
-</section>
-
-{% for w in workers %}
-<section class="column" data-worker="{{ w.code }}">
-  <div class="column-head"><h2>{{ w.label }}</h2><span class="column-code">{{ w.code }}</span></div>
-
-  {% set active = w.tasks | selectattr('task_status','equalto','IN_PROGRESS') | list %}
-  {% set pri = w.tasks | selectattr('task_status','equalto','ALLOCATED') | selectattr('priority_job','equalto',true) | list %}
-  {% set queue = w.tasks | selectattr('task_status','equalto','ALLOCATED') | rejectattr('priority_job','equalto',true) | list %}
-  {% set done = w.tasks | selectattr('task_status','equalto','COMPLETE') | list %}
-
-  <div class="section"><div class="section-title amber">In progress</div><div class="cards">
-  {% for t in active %}
-    <article class="task amber" onclick="openTask('{{ t.job_ref }}')">
-      <div class="refrow"><span class="ref">{{ t.job_ref }}</span>{% if t.priority_job %}<span class="badge priority">PRIORITY</span>{% endif %}</div>
-      <div class="headline">{{ t.despatch_instructions or 'No short instruction supplied' }}</div>
-      <div class="meta"><span>Started {{ t.started_at.strftime('%H:%M') if t.started_at else '—' }}</span><span>{{ t.note_count }} notes</span><span>{{ t.image_count }} images</span></div>
-    </article>
-  {% else %}<div class="empty">Nothing currently started.</div>{% endfor %}
-  </div></div>
-
-  <div class="section"><div class="section-title">Priority</div><div class="cards queue-list" data-worker="{{ w.code }}" data-class="priority">
-  {% for t in pri %}
-    <article class="task blue queue-card" draggable="true" data-ref="{{ t.job_ref }}" onclick="openTask('{{ t.job_ref }}')">
-      <div class="refrow"><span class="ref">{{ t.job_ref }}</span><span class="badge priority">PRIORITY</span></div>
-      <div class="headline">{{ t.despatch_instructions or 'No short instruction supplied' }}</div>
-      <div class="meta"><span>Waiting</span><span>{{ t.note_count }} notes</span><span>{{ t.image_count }} images</span></div>
-    </article>
-  {% else %}<div class="empty">No priority jobs.</div>{% endfor %}
-  </div></div>
-
-  <div class="section"><div class="section-title">Queue</div><div class="cards queue-list" data-worker="{{ w.code }}" data-class="normal">
-  {% for t in queue %}
-    <article class="task blue queue-card" draggable="true" data-ref="{{ t.job_ref }}" onclick="openTask('{{ t.job_ref }}')">
-      <div class="refrow"><span class="ref">{{ t.job_ref }}</span></div>
-      <div class="headline">{{ t.despatch_instructions or 'No short instruction supplied' }}</div>
-      <div class="meta"><span>Waiting</span><span>{{ t.note_count }} notes</span><span>{{ t.image_count }} images</span></div>
-    </article>
-  {% else %}<div class="empty">No ordinary jobs queued.</div>{% endfor %}
-  </div><div class="draghelp">Drag waiting cards within Priority or Queue to change work order.</div></div>
-
-  {% if done %}
-  <div class="section"><div class="section-title green">Completed today</div><div class="cards">
-  {% for t in done %}
-    <article class="task green" onclick="openTask('{{ t.job_ref }}')">
-      <div class="refrow"><span class="ref">{{ t.job_ref }}</span></div>
-      <div class="headline">{{ t.despatch_instructions or 'No short instruction supplied' }}</div>
-      <div class="meta"><span>Completed {{ t.completed_at.strftime('%H:%M') if t.completed_at else '—' }}</span></div>
-    </article>
-  {% endfor %}
-  </div></div>
-  {% endif %}
-</section>
+<header><div><h1>Warehouse Task Queue</h1><div class="subhead">Work from the top down · Priority jobs first</div></div><div class="subhead">{{ tasks|length }} open task{% if tasks|length != 1 %}s{% endif %}</div></header>
+<main>
+<div class="stack">
+{% for t in tasks %}
+<div class="task {% if t.priority_job %}priority{% else %}normal{% endif %}" onclick="openTask('{{ t.job_ref }}')">
+  <div class="pos"><small>Next</small>{{ loop.index }}</div>
+  <div>
+    <div class="topline"><span class="ref">Task {{ t.job_ref }}</span><span class="service">{{ t.vehicle_description or t.vehicle_code or 'Warehouse Task' }}</span>{% if t.priority_job %}<span class="badge red">PRIORITY</span>{% endif %}</div>
+    <div class="who">{% if t.allocation_name %}{{ t.allocation_code }} · {{ t.allocation_name }}{% else %}UNALLOCATED{% endif %}</div>
+    <div class="headline">{{ t.despatch_instructions or 'No short instruction supplied' }}</div>
+    <div class="meta"><span>Booked {{ t.booked_at.strftime('%d %b %H:%M') if t.booked_at else '—' }}</span><span>{{ t.completed_stop_count }}/{{ t.stop_count }} stops complete</span><span>{{ t.task_status }}</span></div>
+  </div>
+  <div class="counts"><div><strong>{{ t.note_count }}</strong> notes</div><div><strong>{{ t.image_count }}</strong> images</div>{% if t.media_count != t.image_count %}<div>{{ t.media_count - t.image_count }} files</div>{% endif %}</div>
+</div>
+{% else %}
+<div class="empty">No open warehouse tasks.</div>
 {% endfor %}
-
-</div></main>
-
+</div>
+</main>
 <dialog id="taskDialog"><div class="mh"><strong id="modalTitle">Warehouse Task</strong><button class="close" onclick="taskDialog.close()">×</button></div><div class="mb" id="modalBody"><div class="loading">Loading…</div></div></dialog>
 <script>
 function fmtDate(v){if(!v)return '—';const d=new Date(v);return isNaN(d)?v:d.toLocaleString('en-GB',{hour12:false});}
@@ -100,48 +47,15 @@ async function openTask(ref){
   const r=await fetch('/api/warehouse-task/'+encodeURIComponent(ref));const d=await r.json();
   if(!r.ok||!d.ok){modalBody.textContent=d.error||'Could not load task';return;}
   const t=d.task;
-  let h='<div class="summary"><div><b>'+esc(t.allocation_name?((t.allocation_code||'')+' · '+t.allocation_name):'UNALLOCATED')+'</b></div><div class="headline">'+esc(t.despatch_instructions||'No short instruction supplied')+'</div><div class="meta"><span>'+esc(t.vehicle_description||t.vehicle_code||'')+'</span><span>'+esc(t.task_status)+'</span><span>POB '+esc(fmtDate(t.started_at))+'</span><span>POD '+esc(fmtDate(t.completed_at))+'</span></div></div>';
-  h+='<div class="detail-section"><h3>Full notes ('+d.notes.length+')</h3>';
+  let h='<div class="summary"><div><b>'+esc(t.allocation_name?((t.allocation_code||'')+' · '+t.allocation_name):'UNALLOCATED')+'</b></div><div class="headline">'+esc(t.despatch_instructions||'No short instruction supplied')+'</div><div class="meta"><span>'+esc(t.vehicle_description||t.vehicle_code||'')+'</span><span>'+esc(t.task_status)+'</span><span>Booked '+esc(fmtDate(t.booked_at))+'</span></div></div>';
+  h+='<div class="section"><h3>Full notes ('+d.notes.length+')</h3>';
   if(!d.notes.length)h+='<div class="loading">No detailed notes received yet.</div>';
   for(const n of d.notes){h+='<div class="note"><div class="notehead">'+esc(n.source)+' · '+esc(n.sender||'')+' · '+esc(fmtDate(n.received_at||n.created_at))+'</div><pre>'+esc(n.note_text)+'</pre></div>';}
-  h+='</div><div class="detail-section"><h3>Photos & files ('+d.media.length+')</h3><div class="media">';
+  h+='</div><div class="section"><h3>Photos & files ('+d.media.length+')</h3><div class="media">';
   if(!d.media.length)h+='<div class="loading">No media received yet.</div>';
   for(const m of d.media){const isImg=(m.content_type||'').startsWith('image/');h+='<div class="media-item"><a href="'+esc(m.url)+'" target="_blank">'+(isImg?'<img src="'+esc(m.url)+'" alt="'+esc(m.original_filename)+'">':'<div class="filebox">'+esc(m.original_filename)+'</div>')+'</a><div class="media-cap">'+esc(m.source)+' · '+esc(m.original_filename)+'</div></div>';}
   h+='</div></div>';modalBody.innerHTML=h;
 }
-let dragged=null;
-document.querySelectorAll('.queue-card').forEach(card=>{
-  card.addEventListener('dragstart',e=>{dragged=card;card.classList.add('dragging');e.stopPropagation();});
-  card.addEventListener('dragend',()=>{card.classList.remove('dragging');document.querySelectorAll('.dragover').forEach(x=>x.classList.remove('dragover'));dragged=null;});
-  card.addEventListener('click',e=>{if(card.classList.contains('dragging'))e.preventDefault();});
-});
-document.querySelectorAll('.queue-list').forEach(list=>{
-  list.addEventListener('dragover',e=>{
-    if(!dragged)return;
-    const source=dragged.closest('.queue-list');
-    if(source!==list)return;
-    e.preventDefault();
-    const target=e.target.closest('.queue-card');
-    if(target&&target!==dragged){target.classList.add('dragover');}
-  });
-  list.addEventListener('dragleave',e=>{const t=e.target.closest('.queue-card');if(t)t.classList.remove('dragover');});
-  list.addEventListener('drop',async e=>{
-    if(!dragged)return;
-    const source=dragged.closest('.queue-list');
-    if(source!==list)return;
-    e.preventDefault();
-    const target=e.target.closest('.queue-card');
-    document.querySelectorAll('.dragover').forEach(x=>x.classList.remove('dragover'));
-    if(target&&target!==dragged){
-      const rect=target.getBoundingClientRect();
-      if(e.clientY < rect.top+rect.height/2) list.insertBefore(dragged,target); else list.insertBefore(dragged,target.nextSibling);
-    }
-    const worker=list.dataset.worker;
-    const all=[...document.querySelectorAll('.queue-list[data-worker="'+CSS.escape(worker)+'"] .queue-card')].map(x=>x.dataset.ref);
-    const r=await fetch('/api/warehouse-task-queue/reorder',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({allocation_code:worker,job_refs:all})});
-    if(!r.ok){alert('Queue order was not saved. The board will refresh.');location.reload();}
-  });
-});
 setTimeout(()=>location.reload(),120000);
 </script>
 </body></html>

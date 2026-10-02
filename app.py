@@ -353,6 +353,7 @@ def job_monitor_email():
                         country_code = EXCLUDED.country_code,
                         required_from = EXCLUDED.required_from,
                         required_to = EXCLUDED.required_to,
+                        deadline_at = EXCLUDED.deadline_at,
                         date_completed = EXCLUDED.date_completed,
                         last_seen_at = EXCLUDED.last_seen_at
                     """,
@@ -658,23 +659,34 @@ def freedom_email():
             )
 
             seen_stop_ids = []
+            booked_at = parsed.get("booked_at")
+
             for stop in parsed["stops"]:
                 stop_id = stop["stop_id"].strip()
                 seen_stop_ids.append(stop_id)
+
+                # Derive deadline independently for each stop.
+                # Freedom defaults Required To to the booking time when no real
+                # deadline has been entered, so ignore differences under 30 minutes.
+                stop_deadline_at = None
+                required_to = stop.get("required_to_dt")
+                if booked_at and required_to and required_to >= booked_at + timedelta(minutes=30):
+                    stop_deadline_at = required_to
+
                 cur.execute(
                     """
                     INSERT INTO public.freedom_stops (
                         stop_id, job_ref, drop_order, drop_type,
                         address_name, address_line_1, address_line_2,
                         postcode, country, country_code,
-                        required_from, required_to, date_completed,
+                        required_from, required_to, deadline_at, date_completed,
                         last_seen_at, updated_at
                     )
                     VALUES (
                         %(stop_id)s, %(job_ref)s, %(drop_order)s, %(drop_type)s,
                         %(address_name)s, %(address_line_1)s, %(address_line_2)s,
                         %(postcode)s, %(country)s, %(country_code)s,
-                        %(required_from)s, %(required_to)s, %(date_completed)s,
+                        %(required_from)s, %(required_to)s, %(deadline_at)s, %(date_completed)s,
                         %(last_seen_at)s, now()
                     )
                     ON CONFLICT (stop_id) DO UPDATE SET
@@ -706,6 +718,7 @@ def freedom_email():
                         "country_code": stop.get("country_code") or None,
                         "required_from": stop.get("required_from_dt"),
                         "required_to": stop.get("required_to_dt"),
+                        "deadline_at": stop_deadline_at,
                         "date_completed": stop.get("date_completed_dt"),
                         "last_seen_at": received_at,
                     },

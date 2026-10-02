@@ -845,6 +845,98 @@ def _insert_job_note(cur, *, job_ref, source, source_message_id=None, sender=Non
     return cur.fetchone()["id"], False
 
 
+@app.post("/freedom-arrived")
+def freedom_arrived():
+    """Record arrival against the first not-yet-completed stop in a Freedom snapshot."""
+    if INGEST_TOKEN and request.headers.get("X-Ingest-Token") != INGEST_TOKEN:
+        return jsonify({"ok": False, "error": "unauthorized"}), 401
+
+    payload = request.get_json(silent=True) or {}
+    message_id = payload.get("message_id")
+    body = payload.get("body") or ""
+    received_at_raw = payload.get("received_at")
+
+    if not body.strip():
+        return jsonify({"ok": False, "error": "body is required"}), 400
+
+    parsed = parse_freedom_snapshot(body)
+    job_ref = (parsed.get("job_ref") or "").strip()
+    if not job_ref:
+        return jsonify({"ok": False, "error": "Could not parse Job"}), 400
+
+    stops = sorted(
+        parsed.get("stops") or [],
+        key=lambda s: int(s.get("drop_order") or 0),
+    )
+    if not stops:
+        return jsonify({"ok": False, "error": "No stops parsed", "job_ref": job_ref}), 400
+
+    active_stop = next((s for s in stops if not s.get("date_completed_dt")), None)
+    if not active_stop:
+        return jsonify({
+            "ok": False,
+            "error": "All stops are already completed",
+            "job_ref": job_ref,
+        }), 409
+
+    stop_id = (active_stop.get("stop_id") or "").strip()
+    if not stop_id:
+        return jsonify({
+            "ok": False,
+            "error": "Inferred active stop has no Stop ID",
+            "job_ref": job_ref,
+        }), 400
+
+    try:
+        arrived_at = _parse_received_at(received_at_raw)
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+
+    with db_connect(row_factory=dict_row) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT stop_id, job_ref, drop_order, date_completed, arrived_at
+                FROM public.freedom_stops
+                WHERE stop_id = %s
+                  AND job_ref = %s
+                """,
+                (stop_id, job_ref),
+            )
+            stop = cur.fetchone()
+            if not stop:
+                return jsonify({
+                    "ok": False,
+                    "error": "Inferred Freedom stop not found in mirror",
+                    "job_ref": job_ref,
+                    "stop_id": stop_id,
+                }), 404
+
+            cur.execute(
+                """
+                UPDATE public.freedom_stops
+                SET arrived_at = COALESCE(arrived_at, %s),
+                    updated_at = now()
+                WHERE stop_id = %s
+                  AND job_ref = %s
+                RETURNING stop_id, job_ref, drop_order, arrived_at, date_completed
+                """,
+                (arrived_at, stop_id, job_ref),
+            )
+            updated = cur.fetchone()
+            conn.commit()
+
+    return jsonify({
+        "ok": True,
+        "job_ref": job_ref,
+        "stop_id": updated["stop_id"],
+        "drop_order": updated["drop_order"],
+        "arrived_at": updated["arrived_at"],
+        "date_completed": updated["date_completed"],
+        "message_id": message_id,
+    })
+
+
 @app.post("/job-note")
 def job_note():
     """Generic note ingestion for any mirrored Freedom job.

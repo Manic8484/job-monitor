@@ -43,7 +43,7 @@ dialog{border:0;border-radius:12px;width:min(1000px,94vw);padding:0;box-shadow:0
       <article class="task unallocated {% if t.priority_job %}priority{% endif %}" onclick="openTask('{{ t.job_ref }}')">
         <div class="topline"><span class="ref">Task {{ t.job_ref }}</span>{% if t.priority_job %}<span class="badge priority">Priority</span>{% endif %}</div>
         <div class="headline">{{ t.despatch_instructions or 'No short instruction supplied' }}</div>
-        <div class="meta"><span>{{ t.vehicle_description or t.vehicle_code or 'Warehouse Task' }}</span><span>Booked {{ t.booked_at.strftime('%d %b %H:%M') if t.booked_at else '—' }}</span></div>
+        <div class="meta"><span>Booked {{ t.booked_at.strftime('%d %b %H:%M') if t.booked_at else '—' }}</span></div>
         <div class="counts"><strong>{{ t.note_count }}</strong> notes · <strong>{{ t.image_count }}</strong> images{% if t.media_count != t.image_count %} · {{ t.media_count - t.image_count }} files{% endif %}</div>
       </article>
       {% else %}<div class="empty">No unallocated warehouse tasks.</div>{% endfor %}
@@ -72,7 +72,6 @@ dialog{border:0;border-radius:12px;width:min(1000px,94vw);padding:0;box-shadow:0
         </div>
         <div class="headline">{{ t.despatch_instructions or 'No short instruction supplied' }}</div>
         <div class="meta">
-          <span>{{ t.vehicle_description or t.vehicle_code or 'Warehouse Task' }}</span>
           <span>Booked {{ t.booked_at.strftime('%d %b %H:%M') if t.booked_at else '—' }}</span>
           {% if t.started_at %}<span>Started {{ t.started_at.strftime('%H:%M') }}</span>{% endif %}
           {% if t.completed_at %}<span>Completed {{ t.completed_at.strftime('%H:%M') }}</span>{% endif %}
@@ -99,7 +98,7 @@ async function openTask(ref){
     const r=await fetch('/api/warehouse-task/'+encodeURIComponent(ref));const d=await r.json();
     if(!r.ok||!d.ok){modalBody.textContent=d.error||'Could not load task';return;}
     const t=d.task;
-    let h='<div class="summary"><div><b>'+esc(t.allocation_name?((t.allocation_code||'')+' · '+t.allocation_name):'UNALLOCATED')+'</b></div><div class="headline">'+esc(t.despatch_instructions||'No short instruction supplied')+'</div><div class="meta"><span>'+esc(t.vehicle_description||t.vehicle_code||'')+'</span><span>'+esc(t.task_status)+'</span><span>Booked '+esc(fmtDate(t.booked_at))+'</span></div></div>';
+    let h='<div class="summary"><div><b>'+esc(t.allocation_name?((t.allocation_code||'')+' · '+t.allocation_name):'UNALLOCATED')+'</b></div><div class="headline">'+esc(t.despatch_instructions||'No short instruction supplied')+'</div><div class="meta"><span>'+esc(t.task_status)+'</span><span>Booked '+esc(fmtDate(t.booked_at))+'</span></div></div>';
     h+='<div class="section"><h3>Full notes ('+d.notes.length+')</h3>';
     if(!d.notes.length)h+='<div class="loading">No detailed notes received yet.</div>';
     for(const n of d.notes){h+='<div class="note"><div class="notehead">'+esc(n.source)+' · '+esc(n.sender||'')+' · '+esc(fmtDate(n.received_at||n.created_at))+'</div><pre>'+esc(n.note_text)+'</pre></div>';}

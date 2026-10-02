@@ -800,6 +800,11 @@ def _warehouse_task_ref_from_subject(subject):
     return match.group(1) if match else None
 
 
+def _ops_note_ref_from_subject(subject):
+    match = re.search(r"\bOps\s+Note\s+(\d+)\b", subject or "", re.I)
+    return match.group(1) if match else None
+
+
 def _insert_job_note(cur, *, job_ref, source, source_message_id=None, sender=None, subject=None, note_text=None, raw_body=None, received_at=None):
     """Insert one source-neutral note against an existing Freedom job.
 
@@ -1274,6 +1279,113 @@ def warehouse_task_email():
         "note_id": note_id,
         "source": "EMAIL",
         "instruction_chars": len(instruction),
+        "attachments": attachment_results,
+    })
+
+
+@app.post("/ops-note-email")
+def ops_note_email():
+    """Attach an Ops Note email and any attachments to an existing Freedom job."""
+    if INGEST_TOKEN and request.headers.get("X-Ingest-Token") != INGEST_TOKEN:
+        return jsonify({"ok": False, "error": "unauthorized"}), 401
+
+    payload = request.get_json(silent=True) or {}
+    message_id = payload.get("message_id")
+    subject = (payload.get("subject") or "").strip()
+    sender = (payload.get("sender") or payload.get("from") or "").strip() or None
+    body = payload.get("body") or ""
+    received_at_raw = payload.get("received_at")
+
+    job_ref = _ops_note_ref_from_subject(subject)
+    if not job_ref:
+        return jsonify({"ok": False, "error": "No Ops Note reference found in subject"}), 400
+
+    note_text = _clean_task_reply_body(body)
+    if not note_text:
+        return jsonify({"ok": False, "error": "No note text found in message body"}), 400
+
+    received_at = datetime.now(LONDON)
+    if received_at_raw:
+        try:
+            received_at = datetime.fromisoformat(str(received_at_raw).replace("Z", "+00:00"))
+        except ValueError:
+            return jsonify({"ok": False, "error": "invalid received_at"}), 400
+
+    with db_connect(row_factory=dict_row) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT job_ref
+                FROM public.freedom_jobs
+                WHERE job_ref = %s
+                """,
+                (job_ref,),
+            )
+            if not cur.fetchone():
+                return jsonify({
+                    "ok": False,
+                    "error": "Freedom job not found",
+                    "job_ref": job_ref,
+                }), 404
+
+            note_id, duplicate = _insert_job_note(
+                cur,
+                job_ref=job_ref,
+                source="EMAIL",
+                source_message_id=message_id,
+                sender=sender,
+                subject=subject,
+                note_text=note_text,
+                raw_body=body,
+                received_at=received_at,
+            )
+
+            attachment_results = []
+            attachments = payload.get("attachments") or []
+            if not isinstance(attachments, list):
+                return jsonify({"ok": False, "error": "attachments must be an array"}), 400
+
+            for item in attachments:
+                if not isinstance(item, dict):
+                    return jsonify({
+                        "ok": False,
+                        "error": "each attachment must be an object",
+                    }), 400
+
+                try:
+                    content_bytes = _decode_base64_content(
+                        item.get("content_base64") or item.get("content")
+                    )
+                    media_id, media_duplicate = _insert_job_media(
+                        cur,
+                        job_ref=job_ref,
+                        source="EMAIL",
+                        content_bytes=content_bytes,
+                        filename=item.get("filename") or item.get("name") or "attachment",
+                        content_type=item.get("content_type") or item.get("mime_type"),
+                        source_message_id=message_id,
+                        source_media_id=item.get("attachment_id") or item.get("source_media_id"),
+                        sender=sender,
+                        caption=item.get("caption"),
+                        received_at=received_at,
+                    )
+                except (ValueError, RuntimeError) as exc:
+                    return jsonify({"ok": False, "error": str(exc)}), 400
+
+                attachment_results.append({
+                    "media_id": media_id,
+                    "duplicate": media_duplicate,
+                })
+
+            conn.commit()
+
+    return jsonify({
+        "ok": True,
+        "duplicate": duplicate,
+        "job_ref": job_ref,
+        "note_id": note_id,
+        "source": "EMAIL",
+        "note_chars": len(note_text),
         "attachments": attachment_results,
     })
 

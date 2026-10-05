@@ -701,6 +701,7 @@ def freedom_email():
                         country_code = EXCLUDED.country_code,
                         required_from = EXCLUDED.required_from,
                         required_to = EXCLUDED.required_to,
+                        deadline_at = EXCLUDED.deadline_at,
                         date_completed = EXCLUDED.date_completed,
                         last_seen_at = EXCLUDED.last_seen_at,
                         updated_at = now()

@@ -1680,8 +1680,8 @@ def warehouse_task_detail(job_ref):
     })
 
 
-@app.post("/operations/<int:operation_id>/presentation-state")
-def update_operation_presentation_state(operation_id):
+@app.post("/jobs/<job_ref>/presentation-state")
+def update_job_presentation_state(job_ref):
     payload = request.get_json(silent=True) or {}
     collected = bool(payload.get("collected"))
     complete = bool(payload.get("complete"))
@@ -1689,24 +1689,43 @@ def update_operation_presentation_state(operation_id):
 
     with db_connect(row_factory=dict_row) as conn:
         with conn.cursor() as cur:
+            cur.execute("SELECT 1 FROM public.freedom_jobs WHERE job_ref = %s", (job_ref,))
+            if not cur.fetchone():
+                return jsonify({"ok": False, "error": "job not found"}), 404
+
             cur.execute("""
-                UPDATE public.monitor_operations
-                SET manual_collected_at = CASE WHEN %s THEN COALESCE(manual_collected_at, now()) ELSE NULL END,
-                    manual_completed_at = CASE WHEN %s THEN COALESCE(manual_completed_at, now()) ELSE NULL END,
-                    presentation_hidden = %s,
+                INSERT INTO public.job_presentation_state (
+                    job_ref, manual_collected_at, manual_completed_at,
+                    presentation_hidden, manual_updated_at, manual_updated_by
+                )
+                VALUES (
+                    %s,
+                    CASE WHEN %s THEN now() ELSE NULL END,
+                    CASE WHEN %s THEN now() ELSE NULL END,
+                    %s, now(), 'BOARD'
+                )
+                ON CONFLICT (job_ref) DO UPDATE SET
+                    manual_collected_at = CASE
+                        WHEN EXCLUDED.manual_collected_at IS NOT NULL
+                            THEN COALESCE(job_presentation_state.manual_collected_at, now())
+                        ELSE NULL
+                    END,
+                    manual_completed_at = CASE
+                        WHEN EXCLUDED.manual_completed_at IS NOT NULL
+                            THEN COALESCE(job_presentation_state.manual_completed_at, now())
+                        ELSE NULL
+                    END,
+                    presentation_hidden = EXCLUDED.presentation_hidden,
                     manual_updated_at = now(),
-                    manual_updated_by = 'BOARD'
-                WHERE id = %s
-                RETURNING id, manual_collected_at, manual_completed_at, presentation_hidden
-            """, (collected, complete, hidden, operation_id))
+                    manual_updated_by = EXCLUDED.manual_updated_by
+                RETURNING job_ref, manual_collected_at, manual_completed_at, presentation_hidden
+            """, (job_ref, collected, complete, hidden))
             row = cur.fetchone()
-            if not row:
-                return jsonify({"ok": False, "error": "operation not found"}), 404
             conn.commit()
 
     return jsonify({
         "ok": True,
-        "operation_id": operation_id,
+        "job_ref": row["job_ref"],
         "collected": row["manual_collected_at"] is not None,
         "complete": row["manual_completed_at"] is not None,
         "hidden": bool(row["presentation_hidden"]),
@@ -1891,6 +1910,26 @@ def board():
                 cur.execute(carry_query, (day_start,))
                 carry_rows = [dict(r) for r in cur.fetchall()]
 
+            all_job_refs = sorted({r["job_ref"] for r in planning_rows + carry_rows})
+            presentation_state = {}
+            if all_job_refs:
+                cur.execute(
+                    """
+                    SELECT job_ref, manual_collected_at, manual_completed_at, presentation_hidden
+                    FROM public.job_presentation_state
+                    WHERE job_ref = ANY(%s)
+                    """,
+                    (all_job_refs,),
+                )
+                presentation_state = {r["job_ref"]: dict(r) for r in cur.fetchall()}
+
+            def visible_on_board(row):
+                state = presentation_state.get(row["job_ref"], {})
+                return not state.get("presentation_hidden") and not state.get("manual_completed_at")
+
+            planning_rows = [r for r in planning_rows if visible_on_board(r)]
+            carry_rows = [r for r in carry_rows if visible_on_board(r)]
+
             job_refs = sorted({r["job_ref"] for r in planning_rows + carry_rows})
             stops_by_job = {}
             if job_refs:
@@ -1965,9 +2004,13 @@ def board():
         journey = operation_journey([job])
 
         anchor = booked_at or day_start
+        state = presentation_state.get(row["job_ref"], {})
         result = {
             "operation_id": row["job_ref"],
             "job_ref": row["job_ref"],
+            "manual_collected": state.get("manual_collected_at") is not None,
+            "manual_complete": state.get("manual_completed_at") is not None,
+            "presentation_hidden": bool(state.get("presentation_hidden")),
             "status": status,
             "status_class": cls,
             "primary_account": row.get("account_name") or row["job_ref"],

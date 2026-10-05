@@ -175,7 +175,7 @@ for(const j of op.jobs){
 }
 details.showModal();
 }
-async function saveState(){if(!currentOperation)return;const response=await fetch("/operations/"+currentOperation.operation_id+"/presentation-state",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({collected:document.getElementById("state-collected").checked,complete:document.getElementById("state-complete").checked,hidden:document.getElementById("state-hidden").checked})});const data=await response.json();if(!response.ok||!data.ok){alert(data.error||"Could not save operation state");return;}window.location.reload();}
+async function saveState(){if(!currentOperation)return;const response=await fetch("/jobs/"+encodeURIComponent(currentOperation.job_ref)+"/presentation-state",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({collected:document.getElementById("state-collected").checked,complete:document.getElementById("state-complete").checked,hidden:document.getElementById("state-hidden").checked})});const data=await response.json();if(!response.ok||!data.ok){alert(data.error||"Could not save operation state");return;}window.location.reload();}
 </script>
 <script>
 setTimeout(function () {

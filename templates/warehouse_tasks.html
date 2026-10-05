@@ -43,7 +43,9 @@ dialog{border:0;border-radius:12px;width:min(1000px,94vw);padding:0;box-shadow:0
       <article class="task unallocated {% if t.priority_job %}priority{% endif %}" onclick="openTask('{{ t.job_ref }}')">
         <div class="topline"><span class="ref">Task {{ t.job_ref }}</span>{% if t.priority_job %}<span class="badge priority">Priority</span>{% endif %}</div>
         <div class="headline">{{ t.despatch_instructions or 'No short instruction supplied' }}</div>
-        <div class="meta"><span>Booked {{ t.booked_at.strftime('%d %b %H:%M') if t.booked_at else '—' }}</span>{% if t.deadline_at %}<span class="deadline">Deadline {{ t.deadline_at.strftime('%d %b %H:%M') }}</span>{% endif %}</div>
+        {% if t.deadline_at %}
+        <div class="meta"><span class="deadline">Deadline {{ t.deadline_at.strftime('%d %b %H:%M') }}</span></div>
+        {% endif %}
         <div class="counts"><strong>{{ t.note_count }}</strong> notes · <strong>{{ t.image_count }}</strong> images{% if t.media_count != t.image_count %} · {{ t.media_count - t.image_count }} files{% endif %}</div>
       </article>
       {% else %}<div class="empty">No unallocated warehouse tasks.</div>{% endfor %}
@@ -71,12 +73,13 @@ dialog{border:0;border-radius:12px;width:min(1000px,94vw);padding:0;box-shadow:0
           {% elif reorderable %}<span class="badge drag">Queue {{ loop.index }}</span>{% endif %}
         </div>
         <div class="headline">{{ t.despatch_instructions or 'No short instruction supplied' }}</div>
-        <div class="meta">
-          <span>Booked {{ t.booked_at.strftime('%d %b %H:%M') if t.booked_at else '—' }}</span>
-          {% if t.deadline_at %}<span class="deadline">Deadline {{ t.deadline_at.strftime('%d %b %H:%M') }}</span>{% endif %}
-          {% if t.started_at %}<span>Started {{ t.started_at.strftime('%H:%M') }}</span>{% endif %}
-          {% if t.completed_at %}<span>Completed {{ t.completed_at.strftime('%H:%M') }}</span>{% endif %}
+        {% if t.deadline_at or t.started_at or t.completed_at %}
+        <div class="meta" style="display:block">
+          {% if t.deadline_at %}<div><span class="deadline">Deadline {{ t.deadline_at.strftime('%d %b %H:%M') }}</span></div>{% endif %}
+          {% if t.started_at %}<div style="margin-top:6px">Started {{ t.started_at.strftime('%d %b %H:%M') }}</div>{% endif %}
+          {% if t.completed_at %}<div style="margin-top:6px">Completed {{ t.completed_at.strftime('%d %b %H:%M') }}</div>{% endif %}
         </div>
+        {% endif %}
         <div class="counts"><strong>{{ t.note_count }}</strong> notes · <strong>{{ t.image_count }}</strong> images{% if t.media_count != t.image_count %} · {{ t.media_count - t.image_count }} files{% endif %}</div>
       </article>
       {% else %}<div class="empty">No warehouse tasks.</div>{% endfor %}

@@ -26,7 +26,7 @@ main{padding:14px 16px 24px;overflow-x:auto;-webkit-overflow-scrolling:touch;tou
 .headline{font-size:17px;line-height:1.32;margin-top:8px}.meta{display:flex;gap:9px;flex-wrap:wrap;font-size:11px;color:var(--muted);margin-top:9px}.deadline{font-weight:800;color:#9a3412;background:#fff7ed;border:1px solid #fed7aa;border-radius:10px;padding:2px 6px}.modal-statusline{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap}.modal-status{font-size:18px;font-weight:800}.modal-deadline{font-size:18px;font-weight:800;color:#b42318}.modal-summary{font-size:17px;line-height:1.35;margin-top:6px}.event-list{margin-top:12px;display:grid;gap:4px;font-size:13px;color:#475467}.event-list strong{color:#111827}.counts{font-size:11px;color:#475467;margin-top:8px}.counts strong{font-size:13px;color:#111827}
 .reorder-note{font-size:9px;color:var(--muted);padding:0 12px 9px}.save-state{font-size:10px;margin-left:auto;color:var(--muted)}.save-state.error{color:#b42318;font-weight:700}.save-state.ok{color:#067647;font-weight:700}
 dialog{border:0;border-radius:12px;width:min(1000px,94vw);padding:0;box-shadow:0 20px 60px rgba(0,0,0,.28)}dialog::backdrop{background:rgba(15,23,42,.48)}.mh{padding:14px 16px;border-bottom:1px solid #e5e7eb;display:flex;justify-content:space-between;align-items:center}.mh strong{font-size:20px}.close{font-size:25px;border:0;background:none;cursor:pointer}.mb{padding:16px}.summary{background:#f8fafc;border:1px solid #e2e8f0;border-radius:9px;padding:12px;margin-bottom:14px}.summary .headline{margin-top:5px}.section{margin-top:18px}.section h3{margin:0 0 8px;font-size:14px}.note{border-left:4px solid #94a3b8;background:#f8fafc;padding:9px 11px;margin-bottom:8px;border-radius:4px}.notehead{font-size:10px;font-weight:800;color:#64748b;margin-bottom:5px}.note pre{font:inherit;white-space:pre-wrap;margin:0}.media{display:flex;gap:10px;overflow-x:auto;padding-bottom:7px}.media-item{min-width:145px;max-width:180px}.media-item img{width:145px;height:120px;object-fit:cover;border-radius:7px;border:1px solid #ddd;display:block}.filebox{width:145px;height:120px;border:1px solid #ddd;border-radius:7px;display:flex;align-items:center;justify-content:center;background:#f8fafc;font-size:12px;text-align:center;padding:8px}.media-cap{font-size:9px;margin-top:4px;color:#64748b;overflow-wrap:anywhere}.loading{color:var(--muted)}
-.media-viewer{position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,.88);display:none;align-items:center;justify-content:center;padding:72px 24px 24px}.media-viewer.open{display:flex}.media-viewer-content{max-width:96vw;max-height:88vh;display:flex;align-items:center;justify-content:center}.media-viewer img{max-width:96vw;max-height:86vh;object-fit:contain}.media-viewer iframe{width:min(1100px,94vw);height:82vh;background:#fff;border:0;border-radius:8px}.media-viewer-close{position:fixed;top:14px;right:18px;z-index:1001;min-width:62px;height:62px;border:2px solid rgba(255,255,255,.65);border-radius:31px;background:#fff;color:#111827;font-size:38px;line-height:1;font-weight:700;cursor:pointer;box-shadow:0 4px 18px rgba(0,0,0,.35)}.media-viewer-title{position:fixed;top:23px;left:24px;right:100px;color:#fff;font-size:16px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+dialog.media-viewer{position:fixed;inset:0;width:100vw;max-width:none;height:100vh;max-height:none;margin:0;border:0;border-radius:0;background:rgba(0,0,0,.88);padding:72px 24px 24px;box-shadow:none;overflow:hidden}.media-viewer::backdrop{background:rgba(0,0,0,.35)}.media-viewer-content{width:100%;height:100%;display:flex;align-items:center;justify-content:center}.media-viewer img{max-width:96vw;max-height:86vh;object-fit:contain}.media-viewer iframe{width:min(1100px,94vw);height:82vh;background:#fff;border:0;border-radius:8px}.media-viewer-close{position:fixed;top:14px;right:18px;z-index:1;min-width:62px;height:62px;border:2px solid rgba(255,255,255,.65);border-radius:31px;background:#fff;color:#111827;font-size:38px;line-height:1;font-weight:700;cursor:pointer;box-shadow:0 4px 18px rgba(0,0,0,.35)}.media-viewer-title{position:fixed;top:23px;left:24px;right:100px;color:#fff;font-size:16px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 @media(max-width:700px){header{padding:11px 12px}.board{gap:10px}.column,.column.unallocated{width:286px}.headline{font-size:16px}.ref{font-size:18px}}
 </style>
 </head>
@@ -92,11 +92,11 @@ dialog{border:0;border-radius:12px;width:min(1000px,94vw);padding:0;box-shadow:0
 </main>
 
 <dialog id="taskDialog"><div class="mh"><strong id="modalTitle">Warehouse Task</strong><button class="close" onclick="taskDialog.close()" aria-label="Close task">×</button></div><div class="mb" id="modalBody"><div class="loading">Loading…</div></div></dialog>
-<div id="mediaViewer" class="media-viewer" role="dialog" aria-modal="true" aria-label="Media viewer" onclick="mediaBackdropClose(event)">
+<dialog id="mediaViewer" class="media-viewer" aria-label="Media viewer" onclick="mediaBackdropClose(event)">
   <div id="mediaViewerTitle" class="media-viewer-title"></div>
   <button class="media-viewer-close" type="button" onclick="closeMedia()" aria-label="Close media">×</button>
   <div id="mediaViewerContent" class="media-viewer-content"></div>
-</div>
+</dialog>
 <script>
 function fmtDate(v){if(!v)return '—';const d=new Date(v);return isNaN(d)?v:d.toLocaleString('en-GB',{hour12:false});}
 function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
@@ -138,17 +138,15 @@ function openMedia(url,title,isImg){
   content.innerHTML=isImg
     ? '<img src="'+esc(url)+'" alt="'+esc(title||'Media')+'">'
     : '<iframe src="'+esc(url)+'" title="'+esc(title||'File')+'"></iframe>';
-  viewer.classList.add('open');
-  document.body.style.overflow='hidden';
+  if(!viewer.open)viewer.showModal();
 }
 function closeMedia(){
   const viewer=document.getElementById('mediaViewer');
-  viewer.classList.remove('open');
+  if(viewer.open)viewer.close();
   document.getElementById('mediaViewerContent').innerHTML='';
-  document.body.style.overflow='';
 }
 function mediaBackdropClose(e){if(e.target.id==='mediaViewer')closeMedia();}
-document.addEventListener('keydown',e=>{if(e.key==='Escape'&&document.getElementById('mediaViewer').classList.contains('open')){e.preventDefault();closeMedia();}});
+document.getElementById('mediaViewer').addEventListener('cancel',e=>{e.preventDefault();closeMedia();});
 
 function addFutureDivider(){
   const pile=document.querySelector('.column.unallocated .pile');

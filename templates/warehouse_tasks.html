@@ -14,11 +14,11 @@
 body{margin:0;font-family:Arial,sans-serif;background:var(--bg);color:var(--ink)}
 header{position:sticky;top:0;z-index:30;background:#fff;border-bottom:1px solid #ddd;padding:13px 18px;display:flex;justify-content:space-between;align-items:center;gap:16px}
 h1{margin:0;font-size:23px}.subhead{font-size:12px;color:var(--muted);margin-top:2px}.total{font-size:13px;color:var(--muted);white-space:nowrap}.total strong{font-size:19px;color:var(--ink)}
-main{padding:14px 16px 24px;overflow-x:auto}.board{display:flex;align-items:flex-start;gap:14px;min-width:max-content}
+main{padding:14px 16px 24px;overflow-x:auto;-webkit-overflow-scrolling:touch;touch-action:pan-x pan-y;overscroll-behavior-x:contain}.board{display:flex;align-items:flex-start;gap:14px;min-width:max-content}
 .column{width:310px;background:#e5e9ef;border:1px solid #d1d7e0;border-radius:11px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.05)}
-.column.unallocated{width:330px}.column-head{position:relative;z-index:10;background:#f8fafc;border-bottom:1px solid #d7dde6;padding:12px 12px;display:flex;justify-content:space-between;align-items:center;gap:8px}
+.column.unallocated{width:330px;position:sticky;left:0;z-index:20;box-shadow:8px 0 14px rgba(23,32,42,.10)}.column-head{position:relative;z-index:10;background:#f8fafc;border-bottom:1px solid #d7dde6;padding:12px 12px;display:flex;justify-content:space-between;align-items:center;gap:8px}
 .column.unallocated .column-head{background:#fff1f2}.worker-name{font-size:18px;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.worker-code{font-size:11px;color:var(--muted);font-weight:700;margin-top:3px}.count{min-width:28px;height:28px;border-radius:14px;background:#fff;border:1px solid #d8dee8;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800}
-.pile{display:flex;flex-direction:column;gap:10px;padding:12px 10px 10px;min-height:70px}.empty{padding:18px 10px;text-align:center;color:var(--muted);font-size:13px}
+.pile{display:flex;flex-direction:column;gap:10px;padding:12px 10px 10px;min-height:70px}.future-divider{display:flex;align-items:center;gap:9px;margin:4px 0 1px;color:#667085;font-size:11px;font-weight:800;letter-spacing:.08em}.future-divider::before,.future-divider::after{content:'';height:1px;background:#b9c1cd;flex:1}.empty{padding:18px 10px;text-align:center;color:var(--muted);font-size:13px}
 .task{background:#fff;border:1px solid var(--line);border-left:7px solid var(--blue);border-radius:9px;padding:12px 12px;box-shadow:0 1px 4px rgba(0,0,0,.07);cursor:pointer;position:relative}.task:hover{box-shadow:0 3px 9px rgba(0,0,0,.12)}
 .task.unallocated{border-left-color:var(--red);background:var(--red-bg)}.task.in-progress{border-left-color:var(--amber);background:var(--amber-bg)}.task.complete{border-left-color:var(--green);background:var(--green-bg);opacity:.82}.task.priority:not(.complete){box-shadow:inset 0 0 0 1px rgba(220,38,38,.18),0 1px 4px rgba(0,0,0,.07)}
 .task[draggable="true"]{cursor:grab}.task.dragging{opacity:.38;cursor:grabbing}.pile.drag-over{background:#dbeafe}
@@ -26,6 +26,7 @@ main{padding:14px 16px 24px;overflow-x:auto}.board{display:flex;align-items:flex
 .headline{font-size:17px;line-height:1.32;margin-top:8px}.meta{display:flex;gap:9px;flex-wrap:wrap;font-size:11px;color:var(--muted);margin-top:9px}.deadline{font-weight:800;color:#9a3412;background:#fff7ed;border:1px solid #fed7aa;border-radius:10px;padding:2px 6px}.modal-statusline{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap}.modal-status{font-size:18px;font-weight:800}.modal-deadline{font-size:18px;font-weight:800;color:#b42318}.modal-summary{font-size:17px;line-height:1.35;margin-top:6px}.event-list{margin-top:12px;display:grid;gap:4px;font-size:13px;color:#475467}.event-list strong{color:#111827}.counts{font-size:11px;color:#475467;margin-top:8px}.counts strong{font-size:13px;color:#111827}
 .reorder-note{font-size:9px;color:var(--muted);padding:0 12px 9px}.save-state{font-size:10px;margin-left:auto;color:var(--muted)}.save-state.error{color:#b42318;font-weight:700}.save-state.ok{color:#067647;font-weight:700}
 dialog{border:0;border-radius:12px;width:min(1000px,94vw);padding:0;box-shadow:0 20px 60px rgba(0,0,0,.28)}dialog::backdrop{background:rgba(15,23,42,.48)}.mh{padding:14px 16px;border-bottom:1px solid #e5e7eb;display:flex;justify-content:space-between;align-items:center}.mh strong{font-size:20px}.close{font-size:25px;border:0;background:none;cursor:pointer}.mb{padding:16px}.summary{background:#f8fafc;border:1px solid #e2e8f0;border-radius:9px;padding:12px;margin-bottom:14px}.summary .headline{margin-top:5px}.section{margin-top:18px}.section h3{margin:0 0 8px;font-size:14px}.note{border-left:4px solid #94a3b8;background:#f8fafc;padding:9px 11px;margin-bottom:8px;border-radius:4px}.notehead{font-size:10px;font-weight:800;color:#64748b;margin-bottom:5px}.note pre{font:inherit;white-space:pre-wrap;margin:0}.media{display:flex;gap:10px;overflow-x:auto;padding-bottom:7px}.media-item{min-width:145px;max-width:180px}.media-item img{width:145px;height:120px;object-fit:cover;border-radius:7px;border:1px solid #ddd;display:block}.filebox{width:145px;height:120px;border:1px solid #ddd;border-radius:7px;display:flex;align-items:center;justify-content:center;background:#f8fafc;font-size:12px;text-align:center;padding:8px}.media-cap{font-size:9px;margin-top:4px;color:#64748b;overflow-wrap:anywhere}.loading{color:var(--muted)}
+.media-viewer{position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,.88);display:none;align-items:center;justify-content:center;padding:72px 24px 24px}.media-viewer.open{display:flex}.media-viewer-content{max-width:96vw;max-height:88vh;display:flex;align-items:center;justify-content:center}.media-viewer img{max-width:96vw;max-height:86vh;object-fit:contain}.media-viewer iframe{width:min(1100px,94vw);height:82vh;background:#fff;border:0;border-radius:8px}.media-viewer-close{position:fixed;top:14px;right:18px;z-index:1001;min-width:62px;height:62px;border:2px solid rgba(255,255,255,.65);border-radius:31px;background:#fff;color:#111827;font-size:38px;line-height:1;font-weight:700;cursor:pointer;box-shadow:0 4px 18px rgba(0,0,0,.35)}.media-viewer-title{position:fixed;top:23px;left:24px;right:100px;color:#fff;font-size:16px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 @media(max-width:700px){header{padding:11px 12px}.board{gap:10px}.column,.column.unallocated{width:286px}.headline{font-size:16px}.ref{font-size:18px}}
 </style>
 </head>
@@ -40,7 +41,7 @@ dialog{border:0;border-radius:12px;width:min(1000px,94vw);padding:0;box-shadow:0
     <div class="column-head"><div><div class="worker-name">Unallocated</div><div class="worker-code">Needs allocation</div></div><div class="count">{{ unallocated|length }}</div></div>
     <div class="pile">
       {% for t in unallocated %}
-      <article class="task unallocated {% if t.priority_job %}priority{% endif %}" onclick="openTask('{{ t.job_ref }}')">
+      <article class="task unallocated {% if t.priority_job %}priority{% endif %}" data-booked-date="{% if t.booked_at %}{{ t.booked_at.strftime('%Y-%m-%d') }}{% endif %}" onclick="openTask('{{ t.job_ref }}')">
         <div class="topline"><span class="ref">Task {{ t.job_ref }}</span>{% if t.priority_job %}<span class="badge priority">Priority</span>{% endif %}</div>
         <div class="headline">{{ t.despatch_instructions or 'No short instruction supplied' }}</div>
         {% if t.deadline_at %}
@@ -90,7 +91,12 @@ dialog{border:0;border-radius:12px;width:min(1000px,94vw);padding:0;box-shadow:0
 </div>
 </main>
 
-<dialog id="taskDialog"><div class="mh"><strong id="modalTitle">Warehouse Task</strong><button class="close" onclick="taskDialog.close()">×</button></div><div class="mb" id="modalBody"><div class="loading">Loading…</div></div></dialog>
+<dialog id="taskDialog"><div class="mh"><strong id="modalTitle">Warehouse Task</strong><button class="close" onclick="taskDialog.close()" aria-label="Close task">×</button></div><div class="mb" id="modalBody"><div class="loading">Loading…</div></div></dialog>
+<div id="mediaViewer" class="media-viewer" role="dialog" aria-modal="true" aria-label="Media viewer" onclick="mediaBackdropClose(event)">
+  <div id="mediaViewerTitle" class="media-viewer-title"></div>
+  <button class="media-viewer-close" type="button" onclick="closeMedia()" aria-label="Close media">×</button>
+  <div id="mediaViewerContent" class="media-viewer-content"></div>
+</div>
 <script>
 function fmtDate(v){if(!v)return '—';const d=new Date(v);return isNaN(d)?v:d.toLocaleString('en-GB',{hour12:false});}
 function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
@@ -119,10 +125,44 @@ async function openTask(ref){
     for(const n of d.notes){h+='<div class="note"><div class="notehead">'+esc(n.source)+' · '+esc(n.sender||'')+' · '+esc(fmtDate(n.received_at||n.created_at))+'</div><pre>'+esc(n.note_text)+'</pre></div>';}
     h+='</div><div class="section"><h3>Photos & files ('+d.media.length+')</h3><div class="media">';
     if(!d.media.length)h+='<div class="loading">No media received yet.</div>';
-    for(const m of d.media){const isImg=(m.content_type||'').startsWith('image/');h+='<div class="media-item"><a href="'+esc(m.url)+'" target="_blank">'+(isImg?'<img src="'+esc(m.url)+'" alt="'+esc(m.original_filename)+'">':'<div class="filebox">'+esc(m.original_filename)+'</div>')+'</a><div class="media-cap">'+esc(m.source)+' · '+esc(m.original_filename)+'</div></div>';}
+    for(const m of d.media){const isImg=(m.content_type||'').startsWith('image/');const u=encodeURIComponent(m.url||'');const fn=encodeURIComponent(m.original_filename||'Media');h+='<div class="media-item"><a href="#" onclick="openMedia(decodeURIComponent(\''+u+'\'),decodeURIComponent(\''+fn+'\'),'+isImg+');return false;">'+(isImg?'<img src="'+esc(m.url)+'" alt="'+esc(m.original_filename)+'">':'<div class="filebox">'+esc(m.original_filename)+'</div>')+'</a><div class="media-cap">'+esc(m.source)+' · '+esc(m.original_filename)+'</div></div>';}
     h+='</div></div>';modalBody.innerHTML=h;
   }catch(e){modalBody.textContent='Could not load task';}
 }
+
+
+function openMedia(url,title,isImg){
+  const viewer=document.getElementById('mediaViewer');
+  const content=document.getElementById('mediaViewerContent');
+  document.getElementById('mediaViewerTitle').textContent=title||'Media';
+  content.innerHTML=isImg
+    ? '<img src="'+esc(url)+'" alt="'+esc(title||'Media')+'">'
+    : '<iframe src="'+esc(url)+'" title="'+esc(title||'File')+'"></iframe>';
+  viewer.classList.add('open');
+  document.body.style.overflow='hidden';
+}
+function closeMedia(){
+  const viewer=document.getElementById('mediaViewer');
+  viewer.classList.remove('open');
+  document.getElementById('mediaViewerContent').innerHTML='';
+  document.body.style.overflow='';
+}
+function mediaBackdropClose(e){if(e.target.id==='mediaViewer')closeMedia();}
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&document.getElementById('mediaViewer').classList.contains('open')){e.preventDefault();closeMedia();}});
+
+function addFutureDivider(){
+  const pile=document.querySelector('.column.unallocated .pile');
+  if(!pile)return;
+  const now=new Date();
+  const today=[now.getFullYear(),String(now.getMonth()+1).padStart(2,'0'),String(now.getDate()).padStart(2,'0')].join('-');
+  const firstFuture=[...pile.querySelectorAll('.task.unallocated')].find(card=>(card.dataset.bookedDate||'')>today);
+  if(!firstFuture)return;
+  const divider=document.createElement('div');
+  divider.className='future-divider';
+  divider.textContent='FUTURE';
+  pile.insertBefore(divider,firstFuture);
+}
+addFutureDivider();
 
 let dragged=null;
 document.querySelectorAll('.task[draggable="true"]').forEach(card=>{

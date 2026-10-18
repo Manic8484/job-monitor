@@ -1,5 +1,6 @@
 
 import os
+import hmac
 import re
 import html
 import base64
@@ -12,11 +13,17 @@ from zoneinfo import ZoneInfo
 import psycopg
 from psycopg.rows import dict_row
 from psycopg import sql
-from flask import Flask, jsonify, render_template, request, Response
+from flask import Flask, jsonify, render_template, request, Response, redirect, url_for, g
 
 from google.cloud import storage
+from board_auth import init_board_auth
 
 app = Flask(__name__)
+init_board_auth(app)
+
+@app.get("/")
+def home():
+    return redirect(url_for("board"))
 
 LONDON = ZoneInfo("Europe/London")
 
@@ -170,7 +177,7 @@ def health():
 
 @app.post("/job-monitor-email")
 def job_monitor_email():
-    if INGEST_TOKEN and request.headers.get("X-Ingest-Token") != INGEST_TOKEN:
+    if not INGEST_TOKEN or not hmac.compare_digest(request.headers.get("X-Ingest-Token", ""), INGEST_TOKEN):
         return jsonify({"ok": False, "error": "unauthorized"}), 401
 
     payload = request.get_json(silent=True) or {}
@@ -512,7 +519,7 @@ def parse_freedom_snapshot(body):
 
 @app.post("/freedom-email")
 def freedom_email():
-    if INGEST_TOKEN and request.headers.get("X-Ingest-Token") != INGEST_TOKEN:
+    if not INGEST_TOKEN or not hmac.compare_digest(request.headers.get("X-Ingest-Token", ""), INGEST_TOKEN):
         return jsonify({"ok": False, "error": "unauthorized"}), 401
 
     payload = request.get_json(silent=True) or {}
@@ -862,7 +869,7 @@ def _insert_job_note(cur, *, job_ref, source, source_message_id=None, sender=Non
 @app.post("/freedom-arrived")
 def freedom_arrived():
     """Record arrival against the first not-yet-completed stop in a Freedom snapshot."""
-    if INGEST_TOKEN and request.headers.get("X-Ingest-Token") != INGEST_TOKEN:
+    if not INGEST_TOKEN or not hmac.compare_digest(request.headers.get("X-Ingest-Token", ""), INGEST_TOKEN):
         return jsonify({"ok": False, "error": "unauthorized"}), 401
 
     payload = request.get_json(silent=True) or {}
@@ -958,7 +965,7 @@ def job_note():
     Intended for trusted integrations such as WhatsApp, manual tooling or future
     mailbox flows where the job reference is already known.
     """
-    if INGEST_TOKEN and request.headers.get("X-Ingest-Token") != INGEST_TOKEN:
+    if not INGEST_TOKEN or not hmac.compare_digest(request.headers.get("X-Ingest-Token", ""), INGEST_TOKEN):
         return jsonify({"ok": False, "error": "unauthorized"}), 401
 
     payload = request.get_json(silent=True) or {}
@@ -1147,7 +1154,7 @@ def job_media_upload():
     JSON payload uses base64 file content. Suitable for Power Automate, OpsBot and
     other trusted internal integrations.
     """
-    if INGEST_TOKEN and request.headers.get("X-Ingest-Token") != INGEST_TOKEN:
+    if not INGEST_TOKEN or not hmac.compare_digest(request.headers.get("X-Ingest-Token", ""), INGEST_TOKEN):
         return jsonify({"ok": False, "error": "unauthorized"}), 401
 
     payload = request.get_json(silent=True) or {}
@@ -1195,7 +1202,7 @@ def job_media_upload():
 @app.post("/job-whatsapp")
 def job_whatsapp():
     """Normalised OpsBot handoff: one WhatsApp message plus zero or more media files."""
-    if INGEST_TOKEN and request.headers.get("X-Ingest-Token") != INGEST_TOKEN:
+    if not INGEST_TOKEN or not hmac.compare_digest(request.headers.get("X-Ingest-Token", ""), INGEST_TOKEN):
         return jsonify({"ok": False, "error": "unauthorized"}), 401
 
     payload = request.get_json(silent=True) or {}
@@ -1304,7 +1311,7 @@ def job_media_download(media_id):
 
 @app.post("/warehouse-task-email")
 def warehouse_task_email():
-    if INGEST_TOKEN and request.headers.get("X-Ingest-Token") != INGEST_TOKEN:
+    if not INGEST_TOKEN or not hmac.compare_digest(request.headers.get("X-Ingest-Token", ""), INGEST_TOKEN):
         return jsonify({"ok": False, "error": "unauthorized"}), 401
 
     payload = request.get_json(silent=True) or {}
@@ -1392,7 +1399,7 @@ def warehouse_task_email():
 @app.post("/ops-note-email")
 def ops_note_email():
     """Attach an Ops Note email and any attachments to an existing Freedom job."""
-    if INGEST_TOKEN and request.headers.get("X-Ingest-Token") != INGEST_TOKEN:
+    if not INGEST_TOKEN or not hmac.compare_digest(request.headers.get("X-Ingest-Token", ""), INGEST_TOKEN):
         return jsonify({"ok": False, "error": "unauthorized"}), 401
 
     payload = request.get_json(silent=True) or {}
@@ -1618,7 +1625,7 @@ def warehouse_task_queue_reorder():
                     """
                     INSERT INTO public.warehouse_queue_control
                         (job_ref, allocation_code, queue_rank, updated_at, updated_by)
-                    VALUES (%s, %s, %s, now(), 'BOARD')
+                    VALUES (%s, %s, %s, now(), %s)
                     ON CONFLICT (job_ref) DO UPDATE SET
                         allocation_code = EXCLUDED.allocation_code,
                         queue_rank = EXCLUDED.queue_rank,
@@ -1702,7 +1709,7 @@ def update_job_presentation_state(job_ref):
                     %s,
                     CASE WHEN %s THEN now() ELSE NULL END,
                     CASE WHEN %s THEN now() ELSE NULL END,
-                    %s, now(), 'BOARD'
+                    %s, now(), %s
                 )
                 ON CONFLICT (job_ref) DO UPDATE SET
                     manual_collected_at = CASE
@@ -1719,7 +1726,7 @@ def update_job_presentation_state(job_ref):
                     manual_updated_at = now(),
                     manual_updated_by = EXCLUDED.manual_updated_by
                 RETURNING job_ref, manual_collected_at, manual_completed_at, presentation_hidden
-            """, (job_ref, collected, complete, hidden))
+            """, (job_ref, collected, complete, hidden, str(g.board_user["id"])))
             row = cur.fetchone()
             conn.commit()
 
@@ -1799,7 +1806,7 @@ def job_board_detail(job_ref):
                     account_name, agent_code, agent_name,
                     vehicle_code, vehicle_description, cancelled_at, booked_at,
                     goods, special_instructions, despatch_instructions,
-                    freedom_status, job_flags
+                    freedom_status
                 FROM public.freedom_jobs
                 WHERE job_ref = %s
                 """,

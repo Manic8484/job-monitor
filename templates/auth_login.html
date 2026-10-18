@@ -1,0 +1,17 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Operations Monitor — Sign in</title>
+<style>body{font:16px system-ui,sans-serif;background:#f4f6f8;color:#203040;display:grid;place-items:center;min-height:90vh}main{background:white;border:1px solid #d9e0e7;border-radius:12px;padding:32px;max-width:380px;width:90%;box-shadow:0 2px 12px #0001}button{padding:12px 18px;border-radius:8px;cursor:pointer;background:#173d65;color:white;border:0;font-size:16px}p{line-height:1.5}#message{color:#9b2424}</style></head>
+<body><main><h1>Operations Monitor</h1><p>Sign in using an authorised Google account to access the Operations Monitor boards.</p><button id="sign-in">Sign in with Google</button><p id="message" role="status"></p></main>
+<script type="module">
+import {initializeApp} from 'https://www.gstatic.com/firebasejs/11.10.0/firebase-app.js';
+import {getAuth, GoogleAuthProvider, signInWithPopup, signOut} from 'https://www.gstatic.com/firebasejs/11.10.0/firebase-auth.js';
+const app=initializeApp({{ firebase_config|tojson }});const auth=getAuth(app);
+const btn=document.getElementById('sign-in'), message=document.getElementById('message');
+btn.onclick=async()=>{btn.disabled=true;message.textContent='';try{
+ const result=await signInWithPopup(auth,new GoogleAuthProvider());
+ const idToken=await result.user.getIdToken();
+ const response=await fetch('/auth/session',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({idToken})});
+ const payload=await response.json();
+ if(!response.ok)throw new Error(payload.error||'Sign-in failed');
+ await signOut(auth);window.location.assign(payload.redirect||'/');
+ }catch(error){message.textContent=error.message||String(error);btn.disabled=false;}};
+</script></body></html>

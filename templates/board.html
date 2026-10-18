@@ -166,7 +166,7 @@ function renderJob(job, stops, notes, media) {
   summaryElement.replaceChildren();
   for (const [label, value] of [
     ["Account", job.account_name], ["Booked", fmt(job.booked_at)],
-    ["Freedom status", job.freedom_status], ["Job flags", job.job_flags],
+    ["Freedom status", job.freedom_status],
     ["Special instructions", job.special_instructions],
     ["Despatch instructions", job.despatch_instructions]
   ]) addField(summaryElement, label, value);
@@ -209,7 +209,7 @@ async function openDetails(op) {
   renderJob({job_ref:ref, account_name:op.primary_account, driver_callsign:j?.driver_callsign,
     agent_code:j?.agent_code, agent_name:j?.driver_name, vehicle_code:j?.vehicle,
     vehicle_description:j?.vehicle_description, goods:j?.goods, booked_at:j?.booked_at,
-    freedom_status:j?.freedom_status, job_flags:j?.job_flags,
+    freedom_status:j?.freedom_status,
     special_instructions:j?.special_instructions, despatch_instructions:j?.despatch_instructions}, j?.stops || [], [], []);
   if (!detailsDialog.open) detailsDialog.showModal();
   try {

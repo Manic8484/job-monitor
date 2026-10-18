@@ -439,6 +439,7 @@ def parse_freedom_snapshot(body):
         "Driver Firstname": "driver_firstname",
         "Driver Lastname": "driver_lastname",
         "Account Name": "account_name",
+        "Account Ref": "account_ref",
         # Temporary aliases while V4 replaces earlier test templates.
         "Account": "account_name",
         "Account Code": "account_name",
@@ -602,7 +603,7 @@ def freedom_email():
                 INSERT INTO public.freedom_jobs (
                     job_ref,
                     driver_callsign, driver_firstname, driver_lastname,
-                    account_name, agent_code, agent_name,
+                    account_name, account_ref, agent_code, agent_name,
                     vehicle_code, vehicle_description,
                     cancelled_at, booked_at,
                     goods, special_instructions, despatch_instructions,
@@ -613,7 +614,7 @@ def freedom_email():
                 VALUES (
                     %(job_ref)s,
                     %(driver_callsign)s, %(driver_firstname)s, %(driver_lastname)s,
-                    %(account_name)s, %(agent_code)s, %(agent_name)s,
+                    %(account_name)s, %(account_ref)s, %(agent_code)s, %(agent_name)s,
                     %(vehicle_code)s, %(vehicle_description)s,
                     %(cancelled_at)s, %(booked_at)s,
                     %(goods)s, %(special_instructions)s, %(despatch_instructions)s,
@@ -626,6 +627,7 @@ def freedom_email():
                     driver_firstname = EXCLUDED.driver_firstname,
                     driver_lastname = EXCLUDED.driver_lastname,
                     account_name = EXCLUDED.account_name,
+                    account_ref = COALESCE(EXCLUDED.account_ref, public.freedom_jobs.account_ref),
                     agent_code = EXCLUDED.agent_code,
                     agent_name = EXCLUDED.agent_name,
                     vehicle_code = EXCLUDED.vehicle_code,
@@ -648,6 +650,7 @@ def freedom_email():
                     "driver_firstname": parsed.get("driver_firstname") or None,
                     "driver_lastname": parsed.get("driver_lastname") or None,
                     "account_name": parsed.get("account_name") or None,
+                    "account_ref": (parsed.get("account_ref") or "").strip() or None,
                     "agent_code": parsed.get("agent_code") or None,
                     "agent_name": parsed.get("agent_name") or None,
                     "vehicle_code": parsed.get("vehicle_code") or None,

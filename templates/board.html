@@ -1,11 +1,11 @@
 <!doctype html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Management Job Monitor</title>
+<title>{{ board_title }} — Job Monitor</title>
 <style>
 :root{--red:#dc2626;--amber:#f59e0b;--blue:#2563eb;--green:#16a34a;--grey:#6b7280}
 *{box-sizing:border-box}body{margin:0;font-family:Arial,sans-serif;background:#eef1f5;color:#17202a}
 header{display:flex;justify-content:space-between;align-items:center;background:#fff;border-bottom:1px solid #ddd;padding:10px 16px}
-h1{margin:0;font-size:21px}.controls{display:flex;gap:6px;align-items:center}.controls a,.controls input{padding:6px 9px;border:1px solid #ccd3dd;border-radius:6px;background:#fff;color:#17202a;text-decoration:none;font:inherit}
+h1{margin:0;font-size:21px}.board-picker{font:inherit;padding:6px 9px;border:1px solid #ccd3dd;border-radius:6px;background:#fff;max-width:220px}.controls{display:flex;gap:6px;align-items:center}.controls a,.controls input{padding:6px 9px;border:1px solid #ccd3dd;border-radius:6px;background:#fff;color:#17202a;text-decoration:none;font:inherit}
 .wrap{padding:14px}.legend{display:flex;gap:14px;margin-bottom:9px;font-size:12px}.sw{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:5px;vertical-align:-2px}
 .board-row{display:grid;grid-template-columns:220px 1fr;gap:12px}.board-row.planning-only{grid-template-columns:1fr}
 .active-column{background:#fff;border:1px solid #d8dee8;border-radius:9px;padding:9px;min-height:500px}.active-title{font-size:13px;font-weight:bold;margin-bottom:8px}.active-stack{display:flex;flex-direction:column;gap:8px}
@@ -45,7 +45,7 @@ table{width:100%;border-collapse:collapse;margin-top:9px;font-size:12px}th,td{pa
 .job-summary-top .job-head{display:flex;justify-content:space-between;gap:12px;font-weight:bold;margin-bottom:6px}
 .job-summary-top .line{margin-top:4px}
 </style></head><body>
-<header><h1>Management Monitor — {{ selected_date.strftime('%d %b %Y') }}</h1><div class="controls"><a href="/board?date={{ prev_date.isoformat() }}">Previous</a><a href="/board">Today</a><a href="/board?date={{ next_date.isoformat() }}">Next</a><input type="date" value="{{ selected_date.isoformat() }}" onchange="window.location='/board?date='+this.value"></div></header>
+<header><h1>{{ board_title }} — {{ selected_date.strftime('%d %b %Y') }}</h1><div class="controls"><label for="board-picker">Board</label><select class="board-picker" id="board-picker" aria-label="Monitoring board" onchange="window.location=this.value+window.location.search">{% for key, config in available_boards.items() %}<option value="{{ config.path }}" {% if key == board_key %}selected{% endif %}>{{ config.title }}</option>{% endfor %}</select><a href="{{ board_path }}?date={{ prev_date.isoformat() }}">Previous</a><a href="{{ board_path }}">Today</a><a href="{{ board_path }}?date={{ next_date.isoformat() }}">Next</a><input type="date" value="{{ selected_date.isoformat() }}" onchange="window.location={{ board_path|tojson }}+'?date='+encodeURIComponent(this.value)"></div></header>
 <div class="wrap">
 <div class="legend"><span><i class="sw" style="background:#dc2626"></i>Unallocated / at risk</span><span><i class="sw" style="background:#f59e0b"></i>Active</span><span><i class="sw" style="background:#2563eb"></i>Future</span><span><i class="sw" style="background:#16a34a"></i>Complete</span><span style="margin-left:auto;font-weight:bold">{{ planned_count }} planned job{% if planned_count != 1 %}s{% endif %}</span></div>
 <div class="board-row {% if not show_active_column %}planning-only{% endif %}">
@@ -101,7 +101,7 @@ table{width:100%;border-collapse:collapse;margin-top:9px;font-size:12px}th,td{pa
 </div>
 </div></div>
 <div class="lookahead"><div class="lookahead-title">Next 10 days</div><div class="lookahead-days">
-{% for d in lookahead_days %}<a class="day-box {% if d.count > 0 %}has-movements{% endif %} {% if d.selected %}selected{% endif %} {% if d.today %}today{% endif %}" href="/board?date={{ d.date.isoformat() }}"><div class="day-name">{{ d.date.strftime('%a') }}</div><div class="day-date">{{ d.date.strftime('%d %b') }}</div><div class="day-count">{% if d.count > 0 %}{{ d.count }} job{% if d.count != 1 %}s{% endif %}{% else %}No jobs{% endif %}</div></a>{% endfor %}
+{% for d in lookahead_days %}<a class="day-box {% if d.count > 0 %}has-movements{% endif %} {% if d.selected %}selected{% endif %} {% if d.today %}today{% endif %}" href="{{ board_path }}?date={{ d.date.isoformat() }}"><div class="day-name">{{ d.date.strftime('%a') }}</div><div class="day-date">{{ d.date.strftime('%d %b') }}</div><div class="day-count">{% if d.count > 0 %}{{ d.count }} job{% if d.count != 1 %}s{% endif %}{% else %}No jobs{% endif %}</div></a>{% endfor %}
 </div></div></div>
 <dialog id="details"><div class="mh"><strong id="mt">Job</strong><button class="close" onclick="details.close()">×</button></div><div class="mb"><div id="job-summary-top" class="job-summary-top"></div><div class="grid2" id="summary"></div><div class="state-box"><label><input type="checkbox" id="state-collected"> Collected</label><label><input type="checkbox" id="state-complete"> Complete</label><label><input type="checkbox" id="state-hidden"> Hide from presentation</label><button class="save-state" onclick="saveState()">Save</button></div><div id="jobs"></div><div id="detail-extra"></div><p id="detail-error" role="status" style="font-size:12px;color:#9b1c1c"></p></div></dialog>
 <script>

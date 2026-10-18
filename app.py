@@ -37,6 +37,14 @@ JOB_MEDIA_MAX_BYTES = int(os.getenv("JOB_MEDIA_MAX_BYTES", str(20 * 1024 * 1024)
 JOB_BOARD_VIEW = os.getenv("JOB_BOARD_VIEW", "public.v_job_board_special")
 JOB_BOARD_TITLE = os.getenv("JOB_BOARD_TITLE", "High Importance Jobs")
 
+# Explicit board registry: URLs never accept arbitrary SQL view names.
+# JOB_BOARD_VIEW/TITLE retained for backwards-compatible main-board deployments.
+BOARD_REGISTRY = {
+    "high-importance": {"title": JOB_BOARD_TITLE, "view": JOB_BOARD_VIEW, "path": "/board"},
+    "nhs": {"title": "NHS Pharmacy Support", "view": "public.v_job_board_nhs", "path": "/board/nhs"},
+}
+
+
 def db_connect(row_factory=None):
     database_url = os.getenv("DATABASE_URL")
     if database_url:
@@ -1869,9 +1877,9 @@ def job_board_detail(job_ref):
     })
 
 
-def _board_view_identifier():
-    """Return a safely quoted schema/view identifier from JOB_BOARD_VIEW."""
-    parts = JOB_BOARD_VIEW.split(".")
+def _board_view_identifier(view_name):
+    """Return a safely quoted identifier from the server-side board registry."""
+    parts = view_name.split(".")
     if len(parts) == 1:
         parts = ["public", parts[0]]
     if len(parts) != 2 or not all(re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", p or "") for p in parts):
@@ -1880,6 +1888,7 @@ def _board_view_identifier():
 
 
 @app.get("/board")
+@app.get("/board/nhs")
 def board():
     """Generic live job board backed by a common database-view contract."""
     today = datetime.now(LONDON).date()
@@ -1891,7 +1900,9 @@ def board():
     day_end = day_start + timedelta(days=1)
     lookahead_start = datetime.combine(today, time.min).replace(tzinfo=LONDON)
     lookahead_end = lookahead_start + timedelta(days=10)
-    schema_ident, view_ident = _board_view_identifier()
+    board_key = "nhs" if request.path == "/board/nhs" else "high-importance"
+    selected_board = BOARD_REGISTRY[board_key]
+    schema_ident, view_ident = _board_view_identifier(selected_board["view"])
     board_view = sql.SQL("{}.{}").format(schema_ident, view_ident)
 
     with db_connect(row_factory=dict_row) as conn:
@@ -2057,7 +2068,10 @@ def board():
 
     return render_template(
         "board.html",
-        board_title=JOB_BOARD_TITLE,
+        board_title=selected_board["title"],
+        board_path=selected_board["path"],
+        board_key=board_key,
+        available_boards=BOARD_REGISTRY,
         active_operations=active_operations,
         timeline_operations=timeline_operations,
         show_active_column=show_active_column,

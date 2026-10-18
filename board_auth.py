@@ -217,7 +217,7 @@ def init_board_auth(app):
             except (BadSignature, SignatureExpired):
                 pass
         if not isinstance(uid, str) or not uid:
-            if request.path in ('/', '/board') and request.method == 'GET':
+            if request.path in ('/', '/board', '/board/nhs') and request.method == 'GET':
                 return redirect(url_for('board_auth.login'))
             return jsonify(error='Authentication required'), 401
         if request.method not in ('GET', 'HEAD', 'OPTIONS'):
@@ -231,7 +231,7 @@ def init_board_auth(app):
                     # not on every automatic board refresh. Permission checks
                     # still happen on every request.
                     if (request.method == 'GET'
-                            and request.path in ('/board',)
+                            and request.path in ('/board', '/board/nhs')
                             and claims.get('board_access_logged') is not True):
                         audit(conn, 'BOARD_ACCESS', user['id'])
                         g.mark_board_access_logged = True

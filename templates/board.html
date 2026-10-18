@@ -47,7 +47,7 @@ table{width:100%;border-collapse:collapse;margin-top:9px;font-size:12px}th,td{pa
 </style></head><body>
 <header><h1>Management Job Monitor — {{ selected_date.strftime('%d %b %Y') }}</h1><div class="controls"><a href="/board?date={{ prev_date.isoformat() }}">Previous</a><a href="/board">Today</a><a href="/board?date={{ next_date.isoformat() }}">Next</a><input type="date" value="{{ selected_date.isoformat() }}" onchange="window.location='/board?date='+this.value"></div></header>
 <div class="wrap">
-<div class="legend"><span><i class="sw" style="background:#dc2626"></i>Unallocated / at risk</span><span><i class="sw" style="background:#f59e0b"></i>Active</span><span><i class="sw" style="background:#2563eb"></i>Future</span><span><i class="sw" style="background:#16a34a"></i>Complete</span><span style="margin-left:auto;font-weight:bold">{{ planned_count }} planned operation{% if planned_count != 1 %}s{% endif %}</span></div>
+<div class="legend"><span><i class="sw" style="background:#dc2626"></i>Unallocated / at risk</span><span><i class="sw" style="background:#f59e0b"></i>Active</span><span><i class="sw" style="background:#2563eb"></i>Future</span><span><i class="sw" style="background:#16a34a"></i>Complete</span><span style="margin-left:auto;font-weight:bold">{{ planned_count }} planned job{% if planned_count != 1 %}s{% endif %}</span></div>
 <div class="board-row {% if not show_active_column %}planning-only{% endif %}">
 {% if show_active_column %}
 <aside class="active-column"><div class="active-title">Active monitoring</div><div class="active-stack">
@@ -101,81 +101,150 @@ table{width:100%;border-collapse:collapse;margin-top:9px;font-size:12px}th,td{pa
 </div>
 </div></div>
 <div class="lookahead"><div class="lookahead-title">Next 10 days</div><div class="lookahead-days">
-{% for d in lookahead_days %}<a class="day-box {% if d.count > 0 %}has-movements{% endif %} {% if d.selected %}selected{% endif %} {% if d.today %}today{% endif %}" href="/board?date={{ d.date.isoformat() }}"><div class="day-name">{{ d.date.strftime('%a') }}</div><div class="day-date">{{ d.date.strftime('%d %b') }}</div><div class="day-count">{% if d.count > 0 %}{{ d.count }} operation{% if d.count != 1 %}s{% endif %}{% else %}No operations{% endif %}</div></a>{% endfor %}
+{% for d in lookahead_days %}<a class="day-box {% if d.count > 0 %}has-movements{% endif %} {% if d.selected %}selected{% endif %} {% if d.today %}today{% endif %}" href="/board?date={{ d.date.isoformat() }}"><div class="day-name">{{ d.date.strftime('%a') }}</div><div class="day-date">{{ d.date.strftime('%d %b') }}</div><div class="day-count">{% if d.count > 0 %}{{ d.count }} job{% if d.count != 1 %}s{% endif %}{% else %}No jobs{% endif %}</div></a>{% endfor %}
 </div></div></div>
-<dialog id="details"><div class="mh"><strong id="mt">Operation</strong><button class="close" onclick="details.close()">×</button></div><div class="mb"><div id="job-summary-top" class="job-summary-top"></div><div class="grid2" id="summary"></div><div class="state-box"><label><input type="checkbox" id="state-collected"> Collected</label><label><input type="checkbox" id="state-complete"> Complete</label><label><input type="checkbox" id="state-hidden"> Hide from presentation</label><button class="save-state" onclick="saveState()">Save</button></div><div id="jobs"></div></div></dialog>
+<dialog id="details"><div class="mh"><strong id="mt">Job</strong><button class="close" onclick="details.close()">×</button></div><div class="mb"><div id="job-summary-top" class="job-summary-top"></div><div class="grid2" id="summary"></div><div class="state-box"><label><input type="checkbox" id="state-collected"> Collected</label><label><input type="checkbox" id="state-complete"> Complete</label><label><input type="checkbox" id="state-hidden"> Hide from presentation</label><button class="save-state" onclick="saveState()">Save</button></div><div id="jobs"></div><div id="detail-extra"></div><p id="detail-error" role="status" style="font-size:12px;color:#9b1c1c"></p></div></dialog>
 <script>
-let currentOperation=null;
-function fmt(v){if(v===null||v===undefined||v==="")return"—";if(typeof v==="string"&&v.includes("T")){const d=new Date(v);if(!isNaN(d))return d.toLocaleString("en-GB",{hour12:false});}return v;}
-function openDetails(op){
-currentOperation=op;
-mt.textContent=op.primary_account+" — "+op.status;
-document.getElementById("state-collected").checked=!!op.manual_collected;
-document.getElementById("state-complete").checked=!!op.manual_complete;
-document.getElementById("state-hidden").checked=!!op.presentation_hidden;
-
-const rows=[["Operation ID",op.operation_id],["Allocation",op.allocation_status],["Active dockets",op.active_job_count],["Unallocated dockets",op.unallocated_job_count],["Note",op.manual_note]];
-summary.innerHTML="";
-for(const [l,v] of rows){
-  const a=document.createElement("div");a.className="lab";a.textContent=l;
-  const b=document.createElement("div");b.textContent=fmt(v);
-  summary.append(a,b);
-}
-
-const top=document.getElementById("job-summary-top");
-top.innerHTML="";
-if(op.jobs.length){
-  const j=op.jobs[0];
-
-  const head=document.createElement("div");
-  head.className="job-head";
-  const driverBits=[j.agent_callsign||"UNALLOCATED",j.driver_name||""].filter(Boolean).join(" · ");
-  head.innerHTML="<span>Job "+j.job_ref+"</span><span>"+driverBits+"</span>";
-  top.appendChild(head);
-
-  const vehicle=document.createElement("div");
-  vehicle.className="line";
-  const vehicleBits=[j.vehicle||"",j.vehicle_description||""].filter(Boolean).join(" · ");
-  vehicle.textContent=vehicleBits||"—";
-  top.appendChild(vehicle);
-
-  const goods=document.createElement("div");
-  goods.className="line";
-  goods.textContent="Goods: "+(j.goods||"—");
-  top.appendChild(goods);
-}
-
-jobs.innerHTML="";
-for(const j of op.jobs){
-  const block=document.createElement("div");
-  block.className="job-block";
-
-  if(op.jobs.length>1){
-    const head=document.createElement("div");
-    head.className="job-head";
-    head.innerHTML="<span>Job "+j.job_ref+"</span>";
-    block.appendChild(head);
+let currentJob = null;
+let detailSequence = 0;
+const detailsDialog = document.getElementById("details");
+const summaryElement = document.getElementById("summary");
+const jobsElement = document.getElementById("jobs");
+const extraElement = document.getElementById("detail-extra");
+const errorElement = document.getElementById("detail-error");
+const saveButton = document.querySelector(".save-state");
+function fmt(v) {
+  if (v === null || v === undefined || v === "") return "—";
+  if (typeof v === "string" && /^\d{4}-\d{2}-\d{2}T/.test(v)) {
+    const d = new Date(v);
+    if (!isNaN(d)) return d.toLocaleString("en-GB", {hour12:false});
   }
-
-  const t=document.createElement("table");
-  t.innerHTML="<thead><tr><th>Stop</th><th>Country</th><th>Postcode</th><th>Required</th><th>Completed</th></tr></thead>";
-  const tb=document.createElement("tbody");
-  for(const s of j.stops){
-    const tr=document.createElement("tr");
-    for(const x of [s.drop_order,s.country_code||s.country,s.postcode,fmt(s.required_from),fmt(s.date_completed)]){
-      const td=document.createElement("td");
-      td.textContent=x??"—";
-      tr.appendChild(td);
-    }
-    tb.appendChild(tr);
+  return String(v);
+}
+function el(tag, text, className) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text !== undefined) node.textContent = fmt(text);
+  return node;
+}
+function addField(container, label, value) {
+  container.append(el("div", label, "lab"), el("div", value));
+}
+function displayStops(stops) {
+  jobsElement.replaceChildren();
+  const block = el("div", undefined, "job-block");
+  block.append(el("strong", "Stops"));
+  const table = document.createElement("table");
+  const thead = document.createElement("thead");
+  const heading = document.createElement("tr");
+  for (const col of ["Stop", "Type", "Location", "Required", "Completed"]) heading.append(el("th", col));
+  thead.append(heading);
+  const tbody = document.createElement("tbody");
+  for (const stop of stops || []) {
+    const row = document.createElement("tr");
+    const location = [stop.address_name, stop.address_line_1, stop.postcode, stop.country_code || stop.country].filter(Boolean).join(", ");
+    for (const val of [stop.drop_order, stop.drop_type, location || stop.postcode, fmt(stop.required_from), fmt(stop.date_completed)]) row.append(el("td", val));
+    tbody.append(row);
   }
-  t.appendChild(tb);
-  block.appendChild(t);
-  jobs.appendChild(block);
+  if (!tbody.children.length) {
+    const td = el("td", "No stops available"); td.colSpan = 5;
+    const row = document.createElement("tr"); row.append(td); tbody.append(row);
+  }
+  table.append(thead, tbody);
+  block.append(table); jobsElement.append(block);
 }
-details.showModal();
+function renderJob(job, stops, notes, media) {
+  const driverName = [job.driver_firstname, job.driver_lastname].filter(Boolean).join(" ") || job.agent_name || "";
+  const driverCode = job.driver_callsign || job.agent_code || "UNALLOCATED";
+  document.getElementById("mt").textContent = (job.account_name || "Job") + " — " + job.job_ref;
+  const top = document.getElementById("job-summary-top");
+  top.replaceChildren();
+  const heading = el("div", undefined, "job-head");
+  heading.append(el("span", "Job " + job.job_ref), el("span", [driverCode, driverName].filter(Boolean).join(" · ")));
+  top.append(heading, el("div", [job.vehicle_code, job.vehicle_description].filter(Boolean).join(" · ") || "No vehicle", "line"));
+  top.append(el("div", "Goods: " + fmt(job.goods), "line"));
+  summaryElement.replaceChildren();
+  for (const [label, value] of [
+    ["Account", job.account_name], ["Booked", fmt(job.booked_at)],
+    ["Freedom status", job.freedom_status], ["Job flags", job.job_flags],
+    ["Special instructions", job.special_instructions],
+    ["Despatch instructions", job.despatch_instructions]
+  ]) addField(summaryElement, label, value);
+  displayStops(stops);
+  extraElement.replaceChildren();
+  const notesBlock = el("div", undefined, "job-block");
+  notesBlock.append(el("strong", "Notes (" + (notes || []).length + ")"));
+  if (!notes || !notes.length) notesBlock.append(el("p", "No notes"));
+  for (const note of notes || []) {
+    const item = el("div", undefined, "detail-note");
+    item.style.cssText = "padding:7px 0;border-bottom:1px solid #eee;white-space:pre-wrap;font-size:12px";
+    item.append(el("strong", [note.source, note.sender, fmt(note.received_at || note.created_at)].filter(Boolean).join(" · ")));
+    item.append(el("div", note.note_text || note.subject || "—"));
+    notesBlock.append(item);
+  }
+  extraElement.append(notesBlock);
+  const mediaBlock = el("div", undefined, "job-block");
+  mediaBlock.append(el("strong", "Media (" + (media || []).length + ")"));
+  if (!media || !media.length) mediaBlock.append(el("p", "No media"));
+  for (const item of media || []) {
+    const line = document.createElement("div"); line.style.cssText = "margin-top:8px;font-size:12px";
+    const link = el("a", item.original_filename || item.caption || "Open attachment");
+    link.href = item.url; link.target = "_blank"; link.rel = "noopener noreferrer";
+    line.append(link, el("span", " · " + (item.source || "Media")));
+    mediaBlock.append(line);
+  }
+  extraElement.append(mediaBlock);
 }
-async function saveState(){if(!currentOperation)return;const response=await fetch("/jobs/"+encodeURIComponent(currentOperation.job_ref)+"/presentation-state",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({collected:document.getElementById("state-collected").checked,complete:document.getElementById("state-complete").checked,hidden:document.getElementById("state-hidden").checked})});const data=await response.json();if(!response.ok||!data.ok){alert(data.error||"Could not save operation state");return;}window.location.reload();}
+async function openDetails(op) {
+  const j = (op.jobs || [])[0];
+  const ref = op.job_ref || (j && j.job_ref);
+  if (!ref) { alert("This card has no job reference"); return; }
+  currentJob = String(ref);
+  const sequence = ++detailSequence;
+  errorElement.textContent = "Loading job details…";
+  document.getElementById("state-collected").checked = !!op.manual_collected;
+  document.getElementById("state-complete").checked = !!op.manual_complete;
+  document.getElementById("state-hidden").checked = !!op.presentation_hidden;
+  // Render board data immediately while the detailed record loads.
+  renderJob({job_ref:ref, account_name:op.primary_account, driver_callsign:j?.driver_callsign,
+    agent_code:j?.agent_code, agent_name:j?.driver_name, vehicle_code:j?.vehicle,
+    vehicle_description:j?.vehicle_description, goods:j?.goods, booked_at:j?.booked_at,
+    freedom_status:j?.freedom_status, job_flags:j?.job_flags,
+    special_instructions:j?.special_instructions, despatch_instructions:j?.despatch_instructions}, j?.stops || [], [], []);
+  if (!detailsDialog.open) detailsDialog.showModal();
+  try {
+    const response = await fetch("/api/job-board/" + encodeURIComponent(ref), {cache:"no-store"});
+    const data = await response.json();
+    if (!response.ok || !data.ok) throw new Error(data.error || "Detail request failed");
+    if (sequence !== detailSequence || currentJob !== String(ref) || !detailsDialog.open) return;
+    renderJob(data.job, data.stops, data.notes, data.media);
+    errorElement.textContent = "";
+  } catch (err) {
+    if (sequence === detailSequence && detailsDialog.open) errorElement.textContent = "Additional details unavailable: " + err.message + ". Showing board data.";
+  }
+}
+async function saveState() {
+  if (!currentJob || saveButton.disabled) return;
+  saveButton.disabled = true;
+  saveButton.textContent = "Saving…";
+  errorElement.textContent = "";
+  try {
+    const response = await fetch("/jobs/" + encodeURIComponent(currentJob) + "/presentation-state", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({collected:document.getElementById("state-collected").checked,
+        complete:document.getElementById("state-complete").checked,
+        hidden:document.getElementById("state-hidden").checked})
+    });
+    const data = await response.json();
+    if (!response.ok || !data.ok) throw new Error(data.error || "Could not save job state");
+    window.location.reload();
+  } catch (err) {
+    errorElement.textContent = "Save failed: " + err.message;
+    saveButton.disabled = false;
+    saveButton.textContent = "Save";
+  }
+}
+detailsDialog.addEventListener("close", () => {detailSequence++;currentJob=null;});
 </script>
 <script>
 setTimeout(function () {

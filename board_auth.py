@@ -178,6 +178,8 @@ def init_board_auth(app):
         return response
 
     app.register_blueprint(bp)
+    from device_sessions import bp as device_bp, identity as device_identity
+    app.register_blueprint(device_bp)
 
     @app.before_request
     def protect():
@@ -202,7 +204,7 @@ def init_board_auth(app):
             return None
         if request.method == 'POST' and request.path == '/api/warehouse-task-queue/reorder':
             return None
-        if request.path.startswith('/static/') or request.path in ('/auth/login', '/auth/session', '/auth/logout'):
+        if request.path.startswith('/static/') or request.path in ('/auth/login', '/auth/session', '/auth/logout', '/auth/device/callback', '/auth/device/start'):
             return None
         token = request.cookies.get(COOKIE_NAME)
         uid = None
@@ -217,7 +219,21 @@ def init_board_auth(app):
             except (BadSignature, SignatureExpired):
                 pass
         if not isinstance(uid, str) or not uid:
+            try:
+                machine = device_identity()
+            except Exception:
+                app.logger.exception('Machine permission check failed')
+                return jsonify(error='Authentication service unavailable'), 503
+            if machine:
+                if request.method not in ('GET','HEAD','OPTIONS'):
+                    require_origin()
+                g.board_user = machine
+                g.machine_authenticated = True
+                g.board_identity_type = "DEVICE"
+                return None
             if request.path in ('/', '/board', '/board/nhs') and request.method == 'GET':
+                if os.getenv('DEVICE_DEFAULT_LOGIN') == '1':
+                    return redirect(url_for('device_sessions.start'))
                 return redirect(url_for('board_auth.login'))
             return jsonify(error='Authentication required'), 401
         if request.method not in ('GET', 'HEAD', 'OPTIONS'):

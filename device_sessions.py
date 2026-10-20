@@ -4,7 +4,10 @@ from flask import Blueprint,request,redirect,jsonify,make_response
 from itsdangerous import URLSafeTimedSerializer,BadSignature,SignatureExpired
 from board_auth import connect_auth,BOARD_CODE
 COOKIE='__Host-board_device'
-TTL=12*3600
+# Pilot: 10 minutes. Change DEVICE_SESSION_SECONDS to 43200 for 12 hours.
+TTL=int(os.getenv('DEVICE_SESSION_SECONDS', '600'))
+if not 60 <= TTL <= 86400:
+    raise RuntimeError('DEVICE_SESSION_SECONDS must be between 60 and 86400')
 bp=Blueprint('device_sessions',__name__)
 def digest(v):return hashlib.sha256(v.encode()).hexdigest()
 def serializer():

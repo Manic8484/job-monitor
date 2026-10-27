@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import os
 import ipaddress
+import re
 from datetime import datetime, timezone
 from functools import wraps
 from urllib.parse import urlparse
@@ -194,6 +195,26 @@ def init_board_auth(app):
             return None
         if request.path == '/health' and request.method == 'GET':
             return None
+        # The legacy warehouse task page obtains signed links from its detail API.
+        # Permit only the exact media ID named by a valid, short-lived token.
+        # Normal operations-board media requests continue through session auth.
+        if request.method == 'GET':
+            match = re.fullmatch(r'/job-media/(\d+)', request.path)
+            token = request.args.get('warehouse_token', '')
+            if match and token:
+                try:
+                    claim = URLSafeTimedSerializer(
+                        os.environ['BOARD_SESSION_SECRET'],
+                        salt='warehouse-task-media-v1'
+                    ).loads(token, max_age=60 * 60)
+                    if (isinstance(claim, dict)
+                            and claim.get('media_id') == int(match.group(1))
+                            and isinstance(claim.get('job_ref'), str)
+                            and claim['job_ref']):
+                        return None
+                except (BadSignature, SignatureExpired, KeyError, ValueError):
+                    pass
+                return jsonify(error='Invalid or expired media link'), 401
         # The warehouse boards remain on their current access scheme during
         # the operations-monitor rollout. Their shared media route is secured
         # below; warehouse photo access therefore requires follow-up work.

@@ -15,6 +15,7 @@ import psycopg
 from psycopg.rows import dict_row
 from psycopg import sql
 from flask import Flask, jsonify, render_template, request, Response, redirect, url_for, g
+from itsdangerous import URLSafeTimedSerializer
 
 from google.cloud import storage
 from google.api_core.exceptions import Forbidden, NotFound, GoogleAPICallError
@@ -1755,8 +1756,14 @@ def warehouse_task_detail(job_ref):
             )
             media = [dict(r) for r in cur.fetchall()]
 
+    # The warehouse-task board currently uses a separate, legacy access scheme.
+    # Grant short-lived, media-ID-specific URLs rather than exposing all /job-media/*.
+    signer = URLSafeTimedSerializer(
+        os.environ["BOARD_SESSION_SECRET"], salt="warehouse-task-media-v1"
+    )
     for item in media:
-        item["url"] = f"/job-media/{item['id']}"
+        token = signer.dumps({"media_id": item["id"], "job_ref": job_ref})
+        item["url"] = f"/job-media/{item['id']}?warehouse_token={token}"
 
     return jsonify({
         "ok": True,

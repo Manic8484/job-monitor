@@ -6,6 +6,7 @@ import html
 import base64
 import hashlib
 import mimetypes
+import logging
 import uuid
 from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
@@ -16,6 +17,7 @@ from psycopg import sql
 from flask import Flask, jsonify, render_template, request, Response, redirect, url_for, g
 
 from google.cloud import storage
+from google.api_core.exceptions import Forbidden, NotFound, GoogleAPICallError
 from board_auth import init_board_auth
 
 app = Flask(__name__)
@@ -1299,8 +1301,43 @@ def job_media_list(job_ref):
     return jsonify({"ok": True, "job_ref": job_ref, "count": len(rows), "media": rows})
 
 
+def _media_signature(data):
+    """Identify common attachment types from bytes, not untrusted metadata."""
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+    if data.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+    if data.startswith((b"GIF87a", b"GIF89a")):
+        return "image/gif"
+    if data.startswith(b"RIFF") and data[8:12] == b"WEBP":
+        return "image/webp"
+    if data.startswith(b"%PDF-"):
+        return "application/pdf"
+    if len(data) >= 12 and data[4:8] == b"ftyp":
+        if data[8:12] in (b"heic", b"heix", b"hevc", b"hevx", b"mif1"):
+            return "image/heic"
+        if data[8:12] in (b"avif", b"avis"):
+            return "image/avif"
+    return None
+
+
+def _unwrap_stored_media(data):
+    """Recover files uploaded before base64-of-base64 protection was added."""
+    if _media_signature(data) or len(data) > JOB_MEDIA_MAX_BYTES * 2:
+        return data
+    candidate = data.strip()
+    if not candidate or len(candidate) % 4 or not re.fullmatch(rb"[A-Za-z0-9+/=]+", candidate):
+        return data
+    try:
+        decoded = base64.b64decode(candidate, validate=True)
+        return decoded if _media_signature(decoded) else data
+    except (ValueError, base64.binascii.Error):
+        return data
+
+
 @app.get("/job-media/<int:media_id>")
 def job_media_download(media_id):
+    """Return image/PDF content to the authenticated board, with traceable failures."""
     with db_connect(row_factory=dict_row) as conn:
         with conn.cursor() as cur:
             cur.execute(
@@ -1312,12 +1349,43 @@ def job_media_download(media_id):
             )
             row = cur.fetchone()
             if not row:
-                return jsonify({"ok": False, "error": "media not found"}), 404
+                return jsonify({"ok": False, "error": "media not found", "media_id": media_id}), 404
 
-    bucket = storage.Client().bucket(row["storage_bucket"])
-    data = bucket.blob(row["storage_object"]).download_as_bytes()
-    headers = {"Content-Disposition": f'inline; filename="{_safe_filename(row["original_filename"])}"'}
-    return Response(data, mimetype=row["content_type"] or "application/octet-stream", headers=headers)
+    try:
+        data = storage.Client().bucket(row["storage_bucket"]).blob(row["storage_object"]).download_as_bytes()
+    except NotFound:
+        app.logger.warning("Media %s: Cloud Storage object not found", media_id)
+        return jsonify({"ok": False, "error": "storage object not found", "media_id": media_id}), 404
+    except Forbidden:
+        app.logger.exception("Media %s: Cloud Run cannot read Cloud Storage object", media_id)
+        return jsonify({"ok": False, "error": "storage access denied", "media_id": media_id}), 502
+    except GoogleAPICallError:
+        app.logger.exception("Media %s: Cloud Storage read failed", media_id)
+        return jsonify({"ok": False, "error": "storage read failed", "media_id": media_id}), 502
+
+    data = _unwrap_stored_media(data)
+    detected_type = _media_signature(data)
+    declared_type = (row["content_type"] or "").split(";", 1)[0].strip().lower()
+    if detected_type:
+        mime = detected_type
+    elif declared_type.startswith(("image/", "text/html", "application/xhtml")):
+        # Never ask a browser to interpret arbitrary bytes as an image or HTML.
+        mime = "application/octet-stream"
+    else:
+        mime = declared_type or "application/octet-stream"
+
+    if not data:
+        app.logger.error("Media %s: Stored object is empty", media_id)
+        return jsonify({"ok": False, "error": "stored file is empty", "media_id": media_id}), 422
+
+    filename = _safe_filename(row["original_filename"])
+    response = Response(data, content_type=mime)
+    response.headers["Content-Disposition"] = "inline" if detected_type else "attachment"
+    response.headers["Content-Disposition"] += f'; filename="{filename}"'
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["Cache-Control"] = "private, no-store"
+    response.headers["Content-Length"] = str(len(data))
+    return response
 
 
 @app.post("/warehouse-task-email")

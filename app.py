@@ -2194,8 +2194,9 @@ def board():
         lookahead_days=lookahead_days,
         planned_count=len(timeline_operations),
     )
-    from mileage_api import register_mileage_api
-    register_mileage_api(api,db_connect)
+# Register the mileage API at module import time, not inside a view function.
+from mileage_api import register_mileage_api
+register_mileage_api(app, db_connect)
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.getenv("PORT", "8080")))

@@ -185,6 +185,15 @@ def init_board_auth(app):
     @app.before_request
     def protect():
         g.board_user = None
+        
+        if request.path.startswith('/v1/viewing-mileage/'):
+            app.logger.warning(
+                "MILEAGE_AUTH_TRACE path=%s blueprint=%s endpoint=%s",
+                request.path,
+                request.blueprint,
+                request.endpoint
+            )
+
         # Exact machine routes retain their ingest-token checks.
         machine_paths = {
             '/job-monitor-email', '/freedom-email', '/freedom-arrived',

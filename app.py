@@ -446,6 +446,7 @@ def parse_freedom_snapshot(body):
 
     job_map = {
         "Job": "job_ref",
+        "Driver Reference": "driver_reference",
         "Driver Callsign": "driver_callsign",
         "Driver Firstname": "driver_firstname",
         "Driver Lastname": "driver_lastname",
@@ -613,7 +614,7 @@ def freedom_email():
                 """
                 INSERT INTO public.freedom_jobs (
                     job_ref,
-                    driver_callsign, driver_firstname, driver_lastname,
+                    driver_reference, driver_callsign, driver_firstname, driver_lastname,
                     account_name, account_ref, agent_code, agent_name,
                     vehicle_code, vehicle_description,
                     cancelled_at, booked_at,
@@ -624,7 +625,7 @@ def freedom_email():
                 )
                 VALUES (
                     %(job_ref)s,
-                    %(driver_callsign)s, %(driver_firstname)s, %(driver_lastname)s,
+                    %(driver_reference)s, %(driver_callsign)s, %(driver_firstname)s, %(driver_lastname)s,
                     %(account_name)s, %(account_ref)s, %(agent_code)s, %(agent_name)s,
                     %(vehicle_code)s, %(vehicle_description)s,
                     %(cancelled_at)s, %(booked_at)s,
@@ -634,6 +635,7 @@ def freedom_email():
                     now()
                 )
                 ON CONFLICT (job_ref) DO UPDATE SET
+                    driver_reference = COALESCE(EXCLUDED.driver_reference, public.freedom_jobs.driver_reference),
                     driver_callsign = EXCLUDED.driver_callsign,
                     driver_firstname = EXCLUDED.driver_firstname,
                     driver_lastname = EXCLUDED.driver_lastname,
@@ -657,6 +659,7 @@ def freedom_email():
                 """,
                 {
                     "job_ref": job_ref,
+                    "driver_reference": (parsed.get("driver_reference") or "").strip() or None,
                     "driver_callsign": parsed.get("driver_callsign") or None,
                     "driver_firstname": parsed.get("driver_firstname") or None,
                     "driver_lastname": parsed.get("driver_lastname") or None,
@@ -678,6 +681,40 @@ def freedom_email():
                     "last_received_at": received_at,
                 },
             )
+
+            # Keep the viewing-agent directory aligned with new Freedom driver IDs.
+            # Only the relevant VSP2/account 8 jobs create viewing-agent records.
+            # Home postcode and mileage rate are deliberately never touched here:
+            # they are maintained through the Excel client.
+            driver_reference = (parsed.get("driver_reference") or "").strip()
+            if (driver_reference
+                    and (parsed.get("account_ref") or "").strip() == "8"
+                    and (parsed.get("vehicle_code") or "").strip().upper() == "VSP2"):
+                cur.execute(
+                    """
+                    INSERT INTO public.viewing_agents (
+                        driver_reference, driver_firstname, driver_lastname,
+                        driver_callsign
+                    ) VALUES (%s, %s, %s, %s)
+                    ON CONFLICT (driver_reference) DO UPDATE SET
+                        driver_firstname = COALESCE(
+                            EXCLUDED.driver_firstname, public.viewing_agents.driver_firstname
+                        ),
+                        driver_lastname = COALESCE(
+                            EXCLUDED.driver_lastname, public.viewing_agents.driver_lastname
+                        ),
+                        driver_callsign = COALESCE(
+                            EXCLUDED.driver_callsign, public.viewing_agents.driver_callsign
+                        ),
+                        updated_at = now()
+                    """,
+                    (
+                        driver_reference,
+                        (parsed.get("driver_firstname") or "").strip() or None,
+                        (parsed.get("driver_lastname") or "").strip() or None,
+                        (parsed.get("driver_callsign") or "").strip() or None,
+                    ),
+                )
 
             seen_stop_ids = []
             booked_at = parsed.get("booked_at")

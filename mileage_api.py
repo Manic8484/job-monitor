@@ -42,29 +42,6 @@ def _authorized():
     supplied = request.headers.get('X-Mileage-Api-Key', '')
     return bool(expected) and hmac.compare_digest(expected, supplied)
 
-@app.get("/v1/viewing-mileage/auth-diagnostic")
-def mileage_auth_diagnostic():
-    import os
-    import hashlib
-    from flask import request, jsonify
-
-    expected = os.environ.get("VIEWING_MILEAGE_API_KEY", "")
-    supplied = request.headers.get("X-Mileage-Api-Key", "")
-
-    def fingerprint(value):
-        return hashlib.sha256(
-            value.encode("utf-8")
-        ).hexdigest()[:12] if value else None
-
-    return jsonify({
-        "server_key_present": bool(expected),
-        "server_key_length": len(expected),
-        "server_key_fingerprint": fingerprint(expected),
-        "header_present": bool(supplied),
-        "header_length": len(supplied),
-        "header_fingerprint": fingerprint(supplied)
-    })
-
 
 @BLUEPRINT.before_request
 def check_key():

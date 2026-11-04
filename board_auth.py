@@ -195,6 +195,13 @@ def init_board_auth(app):
             return None
         if request.path == '/health' and request.method == 'GET':
             return None
+        # The viewing mileage blueprint validates its own dedicated API key
+        # (X-Mileage-Api-Key). Do not impose interactive Firebase/session auth
+        # on its Excel client requests. Limit this exception to routes that
+        # actually belong to the registered blueprint, not an arbitrary prefix.
+        if (request.blueprint == 'viewing_mileage'
+                and request.path.startswith('/v1/viewing-mileage/')):
+            return None
         # The legacy warehouse task page obtains signed links from its detail API.
         # Permit only the exact media ID named by a valid, short-lived token.
         # Normal operations-board media requests continue through session auth.

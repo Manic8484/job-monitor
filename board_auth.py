@@ -20,6 +20,11 @@ from flask import Blueprint, abort, g, jsonify, make_response, redirect, render_
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 
 BOARD_CODE = 'OPERATIONS_MONITOR'
+# Select one authentication mode per Cloud Run deployment, using the same image.
+# The existing staff service defaults to USER to preserve Google sign-in.
+BOARD_AUTH_MODE = os.getenv('BOARD_AUTH_MODE', 'USER').strip().upper()
+if BOARD_AUTH_MODE not in ('USER', 'DEVICE'):
+    raise RuntimeError('BOARD_AUTH_MODE must be USER or DEVICE')
 COOKIE_NAME = '__Host-board_session'
 SESSION_SECONDS = 8 * 60 * 60
 
@@ -231,18 +236,46 @@ def init_board_auth(app):
                 except (BadSignature, SignatureExpired, KeyError, ValueError):
                     pass
                 return jsonify(error='Invalid or expired media link'), 401
-        # The warehouse boards remain on their current access scheme during
-        # the operations-monitor rollout. Their shared media route is secured
-        # below; warehouse photo access therefore requires follow-up work.
-        warehouse_get_paths = {'/warehouse-tasks'}
-        warehouse_get_prefixes = ('/warehouse-tasks/', '/api/warehouse-task/')
-        if request.method == 'GET' and (request.path in warehouse_get_paths or
-            request.path.startswith(warehouse_get_prefixes)):
+        # Warehouse Tasks pages, operative queues, task-detail API and queue
+        # reorder writes now require the same authenticated board identity as
+        # the main Operations Monitor. No warehouse-route authentication bypass.
+        # Login endpoints belong to one authentication mode only. A DEVICE
+        # deployment never exposes the Firebase sign-in API or template.
+        user_routes = ('/auth/login', '/auth/session', '/auth/logout')
+        device_routes = ('/auth/device/start', '/auth/device/callback')
+        if BOARD_AUTH_MODE == 'DEVICE' and request.path in user_routes:
+            return jsonify(error='Route not available on device service'), 404
+        if BOARD_AUTH_MODE == 'USER' and request.path in device_routes:
+            return jsonify(error='Route not available on staff service'), 404
+        if request.path.startswith('/static/') or request.path in user_routes + device_routes:
             return None
-        if request.method == 'POST' and request.path == '/api/warehouse-task-queue/reorder':
-            return None
-        if request.path.startswith('/static/') or request.path in ('/auth/login', '/auth/session', '/auth/logout', '/auth/device/callback', '/auth/device/start'):
-            return None
+
+        if BOARD_AUTH_MODE == 'DEVICE':
+            try:
+                device = device_identity()
+            except Exception:
+                app.logger.exception('Device permission check failed')
+                return jsonify(error='Authentication service unavailable'), 503
+            if device:
+                if request.method not in ('GET', 'HEAD', 'OPTIONS'):
+                    require_origin()
+                g.board_user = device
+                g.board_identity_type = 'DEVICE'
+                g.machine_authenticated = True
+                return None
+            # Send actual browser navigations to the broker. API / media
+            # requests return JSON 401, never a login page in an image or fetch.
+            if request.method == 'GET' and (
+                request.path in ('/', '/board', '/board/nhs')
+                or (request.accept_mimetypes.accept_html
+                    and request.accept_mimetypes['text/html'] > request.accept_mimetypes['application/json']
+                    and not request.path.startswith(('/api/', '/job-media/', '/v1/')))
+            ):
+                return redirect(url_for('device_sessions.start'))
+            return jsonify(error='Device authentication required'), 401
+
+        # USER deployment: only Firebase user cookies are accepted. A stale
+        # device cookie cannot silently override the staff login.
         token = request.cookies.get(COOKIE_NAME)
         uid = None
         claims = {}
@@ -256,21 +289,7 @@ def init_board_auth(app):
             except (BadSignature, SignatureExpired):
                 pass
         if not isinstance(uid, str) or not uid:
-            try:
-                machine = device_identity()
-            except Exception:
-                app.logger.exception('Machine permission check failed')
-                return jsonify(error='Authentication service unavailable'), 503
-            if machine:
-                if request.method not in ('GET','HEAD','OPTIONS'):
-                    require_origin()
-                g.board_user = machine
-                g.machine_authenticated = True
-                g.board_identity_type = "DEVICE"
-                return None
-            if request.path in ('/', '/board', '/board/nhs') and request.method == 'GET':
-                if os.getenv('DEVICE_DEFAULT_LOGIN') == '1':
-                    return redirect(url_for('device_sessions.start'))
+            if request.method == 'GET' and request.path in ('/', '/board', '/board/nhs'):
                 return redirect(url_for('board_auth.login'))
             return jsonify(error='Authentication required'), 401
         if request.method not in ('GET', 'HEAD', 'OPTIONS'):

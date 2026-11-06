@@ -4,7 +4,7 @@ from flask import Blueprint,request,redirect,jsonify,make_response
 from itsdangerous import URLSafeTimedSerializer,BadSignature,SignatureExpired
 from board_auth import connect_auth,BOARD_CODE
 COOKIE='__Host-board_device'
-# Pilot: 10 minutes. Change DEVICE_SESSION_SECONDS to 43200 for 12 hours.
+# Board cookie lifetime configured per Cloud Run service; broker credential persists separately.
 TTL=int(os.getenv('DEVICE_SESSION_SECONDS', '600'))
 if not 60 <= TTL <= 86400:
     raise RuntimeError('DEVICE_SESSION_SECONDS must be between 60 and 86400')
@@ -40,6 +40,8 @@ def callback():
         if not row or row['id'] is None:return jsonify(error='Expired or invalid ticket'),403
         c.commit()
     response=make_response(redirect(os.environ.get('DEVICE_LANDING_PATH','/board')))
+    # Clear any prior staff session on this origin when enrolling as a device.
+    response.delete_cookie('__Host-board_session', path='/', secure=True, httponly=True, samesite='Lax')
     response.set_cookie(COOKIE,serializer().dumps({'kind':'DEVICE','id':row['id']}),secure=True,httponly=True,
                         samesite='Lax',max_age=TTL,path='/')
     return response

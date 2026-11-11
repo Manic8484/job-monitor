@@ -206,6 +206,10 @@ def init_board_auth(app):
             '/warehouse-task-email', '/ops-note-email',
         }
         if request.path in machine_paths and request.method == 'POST':
+            # Devices must never become unattended ingestion gateways.
+            if BOARD_AUTH_MODE == 'DEVICE':
+                return jsonify(error='Ingestion unavailable on device service'), 404
+            # USER endpoints independently require the configured X-Ingest-Token.
             return None
         if request.path == '/health' and request.method == 'GET':
             return None
@@ -216,26 +220,7 @@ def init_board_auth(app):
         if (request.blueprint == 'viewing_mileage'
                 and request.path.startswith('/v1/viewing-mileage/')):
             return None
-        # The legacy warehouse task page obtains signed links from its detail API.
-        # Permit only the exact media ID named by a valid, short-lived token.
-        # Normal operations-board media requests continue through session auth.
-        if request.method == 'GET':
-            match = re.fullmatch(r'/job-media/(\d+)', request.path)
-            token = request.args.get('warehouse_token', '')
-            if match and token:
-                try:
-                    claim = URLSafeTimedSerializer(
-                        os.environ['BOARD_SESSION_SECRET'],
-                        salt='warehouse-task-media-v1'
-                    ).loads(token, max_age=60 * 60)
-                    if (isinstance(claim, dict)
-                            and claim.get('media_id') == int(match.group(1))
-                            and isinstance(claim.get('job_ref'), str)
-                            and claim['job_ref']):
-                        return None
-                except (BadSignature, SignatureExpired, KeyError, ValueError):
-                    pass
-                return jsonify(error='Invalid or expired media link'), 401
+        # Media, warehouse pages and task write APIs all require normal board auth.
         # Warehouse Tasks pages, operative queues, task-detail API and queue
         # reorder writes now require the same authenticated board identity as
         # the main Operations Monitor. No warehouse-route authentication bypass.

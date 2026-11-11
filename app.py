@@ -15,7 +15,6 @@ import psycopg
 from psycopg.rows import dict_row
 from psycopg import sql
 from flask import Flask, jsonify, render_template, request, Response, redirect, url_for, g
-from itsdangerous import URLSafeTimedSerializer
 
 from google.cloud import storage
 from google.api_core.exceptions import Forbidden, NotFound, GoogleAPICallError
@@ -1639,8 +1638,9 @@ def warehouse_tasks_board():
                     CASE task_status
                         WHEN 'UNALLOCATED' THEN 0
                         WHEN 'IN_PROGRESS' THEN 1
-                        WHEN 'ALLOCATED' THEN 2
-                        WHEN 'COMPLETE' THEN 3
+                        WHEN 'AWAITING_CHECK' THEN 2
+                        WHEN 'ALLOCATED' THEN 3
+                        WHEN 'COMPLETE' THEN 4
                         ELSE 9
                     END,
                     priority_job DESC,
@@ -1680,10 +1680,10 @@ def warehouse_operative_tasks(allocation_code):
                 """
                 SELECT *
                 FROM public.v_warehouse_task_board
-                WHERE task_status IN ('IN_PROGRESS', 'ALLOCATED')
+                WHERE task_status IN ('IN_PROGRESS', 'AWAITING_CHECK', 'ALLOCATED')
                   AND allocation_code = %s
                 ORDER BY
-                    CASE WHEN task_status = 'IN_PROGRESS' THEN 0 ELSE 1 END,
+                    CASE task_status WHEN 'IN_PROGRESS' THEN 0 WHEN 'AWAITING_CHECK' THEN 1 ELSE 2 END,
                     started_at ASC NULLS LAST,
                     priority_job DESC,
                     queue_rank ASC NULLS LAST,
@@ -1793,14 +1793,9 @@ def warehouse_task_detail(job_ref):
             )
             media = [dict(r) for r in cur.fetchall()]
 
-    # The warehouse-task board currently uses a separate, legacy access scheme.
-    # Grant short-lived, media-ID-specific URLs rather than exposing all /job-media/*.
-    signer = URLSafeTimedSerializer(
-        os.environ["BOARD_SESSION_SECRET"], salt="warehouse-task-media-v1"
-    )
+    # Media URLs now require the same authenticated board session as task details.
     for item in media:
-        token = signer.dumps({"media_id": item["id"], "job_ref": job_ref})
-        item["url"] = f"/job-media/{item['id']}?warehouse_token={token}"
+        item["url"] = f"/job-media/{item['id']}"
 
     return jsonify({
         "ok": True,

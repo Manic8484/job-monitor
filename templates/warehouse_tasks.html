@@ -8,7 +8,7 @@
 :root{
   --bg:#eef1f5;--panel:#fff;--ink:#17202a;--muted:#667085;--line:#d8dee8;
   --red:#dc2626;--red-bg:#fff5f5;--amber:#f59e0b;--amber-bg:#fffaf0;
-  --blue:#2563eb;--blue-bg:#f7faff;--green:#16a34a;--green-bg:#f3fbf5;
+  --blue:#2563eb;--blue-bg:#f7faff;--purple:#7c3aed;--purple-bg:#f5f3ff;--green:#16a34a;--green-bg:#f3fbf5;
 }
 *{box-sizing:border-box}
 body{margin:0;font-family:Arial,sans-serif;background:var(--bg);color:var(--ink)}
@@ -20,9 +20,9 @@ main{padding:14px 16px 24px;overflow-x:auto;-webkit-overflow-scrolling:touch;tou
 .column.unallocated .column-head{background:#fff1f2}.worker-name{font-size:18px;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.worker-code{font-size:11px;color:var(--muted);font-weight:700;margin-top:3px}.count{min-width:28px;height:28px;border-radius:14px;background:#fff;border:1px solid #d8dee8;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800}
 .pile{display:flex;flex-direction:column;gap:10px;padding:12px 10px 10px;min-height:70px}.future-divider{display:flex;align-items:center;gap:9px;margin:4px 0 1px;color:#667085;font-size:11px;font-weight:800;letter-spacing:.08em}.future-divider::before,.future-divider::after{content:'';height:1px;background:#b9c1cd;flex:1}.empty{padding:18px 10px;text-align:center;color:var(--muted);font-size:13px}
 .task{background:#fff;border:1px solid var(--line);border-left:7px solid var(--blue);border-radius:9px;padding:12px 12px;box-shadow:0 1px 4px rgba(0,0,0,.07);cursor:pointer;position:relative}.task:hover{box-shadow:0 3px 9px rgba(0,0,0,.12)}
-.task.unallocated{border-left-color:var(--red);background:var(--red-bg)}.task.in-progress{border-left-color:var(--amber);background:var(--amber-bg)}.task.complete{border-left-color:var(--green);background:var(--green-bg);opacity:.82}.task.priority:not(.complete){box-shadow:inset 0 0 0 1px rgba(220,38,38,.18),0 1px 4px rgba(0,0,0,.07)}
+.task.unallocated{border-left-color:var(--red);background:var(--red-bg)}.task.in-progress{border-left-color:var(--amber);background:var(--amber-bg)}.task.awaiting-check{border-left-color:var(--purple);background:var(--purple-bg)}.task.complete{border-left-color:var(--green);background:var(--green-bg);opacity:.82}.task.priority:not(.complete){box-shadow:inset 0 0 0 1px rgba(220,38,38,.18),0 1px 4px rgba(0,0,0,.07)}
 .task[draggable="true"]{cursor:grab}.task.dragging{opacity:.38;cursor:grabbing}.pile.drag-over{background:#dbeafe}
-.topline{display:flex;align-items:center;gap:7px;flex-wrap:wrap}.ref{font-size:19px;font-weight:800}.badge{font-size:10px;font-weight:800;border-radius:10px;padding:3px 6px;background:#eef2f6;color:#344054;text-transform:uppercase}.badge.priority{background:#fee2e2;color:#991b1b}.badge.status-in{background:#fef3c7;color:#92400e}.badge.status-done{background:#dcfce7;color:#166534}.badge.drag{background:#dbeafe;color:#1d4ed8}
+.topline{display:flex;align-items:center;gap:7px;flex-wrap:wrap}.ref{font-size:19px;font-weight:800}.badge{font-size:10px;font-weight:800;border-radius:10px;padding:3px 6px;background:#eef2f6;color:#344054;text-transform:uppercase}.badge.priority{background:#fee2e2;color:#991b1b}.badge.status-in{background:#fef3c7;color:#92400e}.badge.status-check{background:#ede9fe;color:#5b21b6}.badge.status-done{background:#dcfce7;color:#166534}.badge.drag{background:#dbeafe;color:#1d4ed8}
 .headline{font-size:17px;line-height:1.32;margin-top:8px}.meta{display:flex;gap:9px;flex-wrap:wrap;font-size:11px;color:var(--muted);margin-top:9px}.deadline{font-weight:800;color:#9a3412;background:#fff7ed;border:1px solid #fed7aa;border-radius:10px;padding:2px 6px}.modal-statusline{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap}.modal-status{font-size:18px;font-weight:800}.modal-deadline{font-size:18px;font-weight:800;color:#b42318}.modal-summary{font-size:17px;line-height:1.35;margin-top:6px}.event-list{margin-top:12px;display:grid;gap:4px;font-size:13px;color:#475467}.event-list strong{color:#111827}.counts{font-size:11px;color:#475467;margin-top:8px}.counts strong{font-size:13px;color:#111827}
 .reorder-note{font-size:9px;color:var(--muted);padding:0 12px 9px}.save-state{font-size:10px;margin-left:auto;color:var(--muted)}.save-state.error{color:#b42318;font-weight:700}.save-state.ok{color:#067647;font-weight:700}
 dialog{border:0;border-radius:12px;width:min(1000px,94vw);padding:0;box-shadow:0 20px 60px rgba(0,0,0,.28)}dialog::backdrop{background:rgba(15,23,42,.48)}.mh{padding:14px 16px;border-bottom:1px solid #e5e7eb;display:flex;justify-content:space-between;align-items:center}.mh strong{font-size:20px}.close{font-size:25px;border:0;background:none;cursor:pointer}.mb{padding:16px}.summary{background:#f8fafc;border:1px solid #e2e8f0;border-radius:9px;padding:12px;margin-bottom:14px}.summary .headline{margin-top:5px}.section{margin-top:18px}.section h3{margin:0 0 8px;font-size:14px}.note{border-left:4px solid #94a3b8;background:#f8fafc;padding:9px 11px;margin-bottom:8px;border-radius:4px}.notehead{font-size:10px;font-weight:800;color:#64748b;margin-bottom:5px}.note pre{font:inherit;white-space:pre-wrap;margin:0}.media{display:flex;gap:10px;overflow-x:auto;padding-bottom:7px}.media-item{min-width:145px;max-width:180px}.media-item img{width:145px;height:120px;object-fit:cover;border-radius:7px;border:1px solid #ddd;display:block}.filebox{width:145px;height:120px;border:1px solid #ddd;border-radius:7px;display:flex;align-items:center;justify-content:center;background:#f8fafc;font-size:12px;text-align:center;padding:8px}.media-cap{font-size:9px;margin-top:4px;color:#64748b;overflow-wrap:anywhere}.loading{color:var(--muted)}
@@ -62,7 +62,7 @@ dialog.media-viewer{position:fixed;inset:0;width:100vw;max-width:none;height:100
     <div class="pile worker-pile" data-allocation-code="{{ worker.code }}">
       {% for t in worker.tasks %}
       {% set reorderable = (t.task_status == 'ALLOCATED') %}
-      <article class="task {% if t.task_status == 'IN_PROGRESS' %}in-progress{% elif t.task_status == 'COMPLETE' %}complete{% endif %} {% if t.priority_job %}priority{% endif %}"
+      <article class="task {% if t.task_status == 'IN_PROGRESS' %}in-progress{% elif t.task_status == 'AWAITING_CHECK' %}awaiting-check{% elif t.task_status == 'COMPLETE' %}complete{% endif %} {% if t.priority_job %}priority{% endif %}"
                data-job-ref="{{ t.job_ref }}" data-reorderable="{{ 1 if reorderable else 0 }}"
                {% if reorderable %}draggable="true"{% endif %}
                onclick="openTask('{{ t.job_ref }}')">
@@ -70,6 +70,7 @@ dialog.media-viewer{position:fixed;inset:0;width:100vw;max-width:none;height:100
           <span class="ref">Task {{ t.job_ref }}</span>
           {% if t.priority_job %}<span class="badge priority">Priority</span>{% endif %}
           {% if t.task_status == 'IN_PROGRESS' %}<span class="badge status-in">In progress</span>
+          {% elif t.task_status == 'AWAITING_CHECK' %}<span class="badge status-check">Awaiting check</span>
           {% elif t.task_status == 'COMPLETE' %}<span class="badge status-done">Complete</span>
           {% elif reorderable %}<span class="badge drag">Queue {{ loop.index }}</span>{% endif %}
         </div>

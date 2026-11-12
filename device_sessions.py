@@ -43,7 +43,7 @@ def callback():
     # Clear any prior staff session on this origin when enrolling as a device.
     response.delete_cookie('__Host-board_session', path='/', secure=True, httponly=True, samesite='Lax')
     response.set_cookie(COOKIE,serializer().dumps({'kind':'DEVICE','id':row['id']}),secure=True,httponly=True,
-                        samesite='Lax',max_age=TTL,path='/')
+                        samesite='None',max_age=TTL,path='/')
     return response
 @bp.get('/auth/device/start')
 def start():
